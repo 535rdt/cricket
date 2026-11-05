@@ -1,0 +1,351 @@
+package com.cricket.scoreboard.network
+
+import android.content.Context
+import com.cricket.scoreboard.data.CricketStorage
+import com.cricket.scoreboard.model.Match
+import kotlinx.coroutines.*
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.*
+
+data class BroadcastInfo(
+    val matchCode: String,
+    val localWebUrl: String,
+    val isBroadcasting: Boolean
+)
+
+object LiveSharingManager {
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var serverSocket: ServerSocket? = null
+    private var serverJob: Job? = null
+    private var watcherJob: Job? = null
+
+    var isBroadcasting: Boolean = false
+        private set
+    var currentMatchCode: String = ""
+        private set
+    var currentWebUrl: String = ""
+        private set
+
+    var isSpectating: Boolean = false
+        private set
+    var spectatingTarget: String = ""
+        private set
+
+    @Volatile
+    private var cachedMatch: Match? = null
+    @Volatile
+    private var cachedMatchJson: String = "{}"
+
+    private const val DEFAULT_PORT = 8080
+
+    fun getLocalIpAddress(): String {
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "127.0.0.1"
+            val validAddrs = mutableListOf<String>()
+            for (intf in interfaces) {
+                if (intf.isLoopback || !intf.isUp) continue
+                for (addr in intf.inetAddresses) {
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                        val ip = addr.hostAddress ?: continue
+                        if (!ip.startsWith("127.")) {
+                            // Prioritize hotspot (192.168.43.x, 192.168.50.x) or wlan
+                            if (intf.name.contains("ap", ignoreCase = true) || ip.startsWith("192.168.43.") || ip.startsWith("192.168.50.")) {
+                                return ip
+                            }
+                            validAddrs.add(ip)
+                        }
+                    }
+                }
+            }
+            if (validAddrs.isNotEmpty()) {
+                return validAddrs.first()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return "127.0.0.1"
+    }
+
+    fun startBroadcasting(context: Context, match: Match): BroadcastInfo {
+        cachedMatch = match
+        val storage = CricketStorage(context)
+        cachedMatchJson = storage.matchToJsonString(match)
+
+        if (currentMatchCode.isEmpty() || !isBroadcasting) {
+            val shortId = match.id.replace("-", "").takeLast(4).uppercase()
+            currentMatchCode = "CRIC-$shortId"
+        }
+
+        val ip = getLocalIpAddress()
+        var port = DEFAULT_PORT
+
+        // Stop existing server if running
+        stopServer()
+
+        try {
+            serverSocket = ServerSocket(port)
+        } catch (e: Exception) {
+            try {
+                port = 8081
+                serverSocket = ServerSocket(port)
+            } catch (e2: Exception) {
+                e2.printStackTrace()
+            }
+        }
+
+        currentWebUrl = "http://$ip:$port"
+        isBroadcasting = true
+
+        // Start local HTTP server loop
+        serverJob = scope.launch {
+            val ss = serverSocket ?: return@launch
+            while (isActive && !ss.isClosed) {
+                try {
+                    val client = ss.accept()
+                    launch { handleClientRequest(client) }
+                } catch (e: Exception) {
+                    if (!isActive) break
+                }
+            }
+        }
+
+        // Broadcast initial state to cloud
+        broadcastToCloud(cachedMatchJson)
+
+        return BroadcastInfo(currentMatchCode, currentWebUrl, true)
+    }
+
+    fun onMatchUpdated(context: Context, match: Match) {
+        if (!isBroadcasting) return
+        cachedMatch = match
+        val storage = CricketStorage(context)
+        cachedMatchJson = storage.matchToJsonString(match)
+
+        // Publish to cloud asynchronously
+        broadcastToCloud(cachedMatchJson)
+    }
+
+    private fun broadcastToCloud(jsonStr: String) {
+        if (currentMatchCode.isEmpty()) return
+        scope.launch {
+            try {
+                val cleanCode = currentMatchCode.replace("-", "").lowercase()
+                val url = URL("https://ntfy.sh/cricket_live_$cleanCode")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 3000
+                    readTimeout = 3000
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("Title", "Cricket Score Update")
+                }
+                conn.outputStream.use { os ->
+                    os.write(jsonStr.toByteArray(Charsets.UTF_8))
+                    os.flush()
+                }
+                conn.responseCode
+                conn.disconnect()
+            } catch (e: Exception) {
+                // Ignore transient network errors
+            }
+        }
+    }
+
+    private fun handleClientRequest(socket: Socket) {
+        try {
+            socket.soTimeout = 4000
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+            val line = reader.readLine() ?: return socket.close()
+
+            val parts = line.split(" ")
+            val method = if (parts.isNotEmpty()) parts[0] else "GET"
+            val path = if (parts.size > 1) parts[1] else "/"
+
+            val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8)
+
+            when {
+                path == "/api/match" || path.startsWith("/api/match?") -> {
+                    val json = cachedMatchJson
+                    val bytes = json.toByteArray(Charsets.UTF_8)
+                    writer.write("HTTP/1.1 200 OK\r\n")
+                    writer.write("Content-Type: application/json; charset=utf-8\r\n")
+                    writer.write("Content-Length: ${bytes.size}\r\n")
+                    writer.write("Access-Control-Allow-Origin: *\r\n")
+                    writer.write("Access-Control-Allow-Methods: GET, OPTIONS\r\n")
+                    writer.write("Connection: close\r\n\r\n")
+                    writer.write(json)
+                    writer.flush()
+                }
+                method == "OPTIONS" -> {
+                    writer.write("HTTP/1.1 200 OK\r\n")
+                    writer.write("Access-Control-Allow-Origin: *\r\n")
+                    writer.write("Access-Control-Allow-Methods: GET, OPTIONS\r\n")
+                    writer.write("Access-Control-Allow-Headers: *\r\n")
+                    writer.write("Content-Length: 0\r\n")
+                    writer.write("Connection: close\r\n\r\n")
+                    writer.flush()
+                }
+                else -> {
+                    // Serve HTML
+                    val html = LiveHtmlGenerator.generateHtml(cachedMatch, currentMatchCode)
+                    val bytes = html.toByteArray(Charsets.UTF_8)
+                    writer.write("HTTP/1.1 200 OK\r\n")
+                    writer.write("Content-Type: text/html; charset=utf-8\r\n")
+                    writer.write("Content-Length: ${bytes.size}\r\n")
+                    writer.write("Access-Control-Allow-Origin: *\r\n")
+                    writer.write("Connection: close\r\n\r\n")
+                    writer.write(html)
+                    writer.flush()
+                }
+            }
+            socket.close()
+        } catch (e: Exception) {
+            try { socket.close() } catch (ignored: Exception) {}
+        }
+    }
+
+    fun stopBroadcasting() {
+        isBroadcasting = false
+        stopServer()
+    }
+
+    private fun stopServer() {
+        try {
+            serverJob?.cancel()
+            serverJob = null
+            serverSocket?.close()
+            serverSocket = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // --- Viewer / Spectator Mode ---
+    fun startWatching(
+        context: Context,
+        input: String,
+        onMatchUpdate: (Match) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        stopWatching()
+        val target = input.trim()
+        if (target.isEmpty()) {
+            onError("Please enter a Match Code or Host IP")
+            return
+        }
+
+        isSpectating = true
+        spectatingTarget = target
+        val storage = CricketStorage(context)
+
+        val isLocalAddress = target.contains(".") || target.startsWith("http://")
+
+        watcherJob = scope.launch {
+            var consecutiveErrors = 0
+            while (isActive && isSpectating) {
+                try {
+                    val jsonStr = if (isLocalAddress) {
+                        fetchFromLocalServer(target)
+                    } else {
+                        fetchFromCloud(target)
+                    }
+
+                    if (!jsonStr.isNullOrEmpty()) {
+                        val match = storage.jsonStringToMatch(jsonStr)
+                        if (match != null) {
+                            consecutiveErrors = 0
+                            withContext(Dispatchers.Main) {
+                                onMatchUpdate(match)
+                            }
+                        } else {
+                            consecutiveErrors++
+                        }
+                    } else {
+                        consecutiveErrors++
+                    }
+
+                    if (consecutiveErrors >= 6) {
+                        withContext(Dispatchers.Main) {
+                            onError("Could not connect to live match. Ensure scorer has broadcast enabled.")
+                        }
+                    }
+                } catch (e: Exception) {
+                    consecutiveErrors++
+                    if (consecutiveErrors >= 6) {
+                        withContext(Dispatchers.Main) {
+                            onError("Connection error: ${e.localizedMessage ?: "Unknown error"}")
+                        }
+                    }
+                }
+                delay(1800) // Poll every 1.8 seconds for smooth live updates
+            }
+        }
+    }
+
+    fun stopWatching() {
+        isSpectating = false
+        spectatingTarget = ""
+        watcherJob?.cancel()
+        watcherJob = null
+    }
+
+    private fun fetchFromLocalServer(addressInput: String): String? {
+        val cleanUrl = if (addressInput.startsWith("http://") || addressInput.startsWith("https://")) {
+            if (addressInput.endsWith("/api/match")) addressInput else "${addressInput.trimEnd('/')}/api/match"
+        } else {
+            val portPart = if (!addressInput.contains(":")) ":8080" else ""
+            "http://$addressInput$portPart/api/match"
+        }
+
+        var conn: HttpURLConnection? = null
+        return try {
+            val url = URL(cleanUrl)
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 3000
+                readTimeout = 3000
+            }
+            if (conn.responseCode in 200..299) {
+                conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } else null
+        } catch (e: Exception) {
+            null
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    private fun fetchFromCloud(matchCode: String): String? {
+        val cleanCode = matchCode.replace("-", "").trim().lowercase()
+        val urlStr = "https://ntfy.sh/cricket_live_$cleanCode/json?poll=1"
+        var conn: HttpURLConnection? = null
+        return try {
+            val url = URL(urlStr)
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 3500
+                readTimeout = 3500
+            }
+            if (conn.responseCode in 200..299) {
+                val response = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                // ntfy /json?poll=1 returns lines of JSON events: {"event":"message", "message":"{...}"}
+                val lines = response.lines().filter { it.isNotBlank() }
+                if (lines.isNotEmpty()) {
+                    val lastLine = lines.last()
+                    val obj = JSONObject(lastLine)
+                    if (obj.has("message")) {
+                        obj.getString("message")
+                    } else lastLine
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
+        } finally {
+            conn?.disconnect()
+        }
+    }
+}
