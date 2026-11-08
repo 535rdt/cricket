@@ -34,9 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cricket.scoreboard.model.*
-import com.cricket.scoreboard.network.SupabaseClient
 import com.cricket.scoreboard.ui.components.PlayerAvatar
-import com.cricket.scoreboard.ui.dialogs.SupabaseConfigDialog
 import com.cricket.scoreboard.ui.theme.*
 import com.cricket.scoreboard.viewmodel.ActiveScreen
 import com.cricket.scoreboard.viewmodel.CricketViewModel
@@ -55,7 +53,6 @@ fun SharingScreen(
     var selectedTab by remember { mutableStateOf(if (uiState.isBroadcasting && !uiState.isSpectatorMode) 1 else 0) }
     var inputCode by remember { mutableStateOf("") }
     var selectedScorecardInnings by remember { mutableStateOf(1) }
-    var showSupabaseDialog by remember { mutableStateOf(false) }
 
     fun copyToClipboard(label: String, text: String) {
         clipboardManager.setText(AnnotatedString(text))
@@ -940,80 +937,6 @@ Follow ball-by-ball updates live!
                     }
                 }
             }
-
-            // Supabase Cloud Sync Card
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(2.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (SupabaseClient.isConfigured(context)) TurfGreenMedium.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.CloudSync,
-                                contentDescription = null,
-                                tint = if (SupabaseClient.isConfigured(context)) TurfGreenMedium else Color.Gray,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Supabase Cloud Sync",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = CircleShape,
-                                    color = if (SupabaseClient.isConfigured(context)) TurfGreenMedium else Color.Gray,
-                                    modifier = Modifier.size(8.dp)
-                                ) {}
-                            }
-                            Text(
-                                text = if (SupabaseClient.isConfigured(context)) "Connected • Real-time DB enabled" else "Connect project for cloud database sync",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    OutlinedButton(
-                        onClick = { showSupabaseDialog = true },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.height(34.dp)
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (SupabaseClient.isConfigured(context)) "Config" else "Setup", fontSize = 11.sp)
-                    }
-                }
-            }
-        }
-
-        if (showSupabaseDialog) {
-            SupabaseConfigDialog(
-                onDismiss = { showSupabaseDialog = false },
-                onSaved = {
-                    showSupabaseDialog = false
-                    Toast.makeText(context, "Supabase cloud settings saved!", Toast.LENGTH_SHORT).show()
-                }
-            )
         }
     }
 }
