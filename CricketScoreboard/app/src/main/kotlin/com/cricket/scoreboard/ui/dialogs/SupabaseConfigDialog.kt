@@ -34,8 +34,8 @@ fun SupabaseConfigDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var projectUrl by remember { mutableStateOf(SupabaseClient.getUrl(context)) }
-    var anonKey by remember { mutableStateOf(SupabaseClient.getAnonKey(context)) }
+    var projectUrl by remember { mutableStateOf(SupabaseClient.getUrl(context).ifBlank { SupabaseClient.DEFAULT_URL }) }
+    var anonKey by remember { mutableStateOf(SupabaseClient.getAnonKey(context).ifBlank { SupabaseClient.DEFAULT_KEY }) }
     var autoSync by remember { mutableStateOf(SupabaseClient.isAutoSyncEnabled(context)) }
 
     var isTesting by remember { mutableStateOf(false) }

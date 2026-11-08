@@ -27,8 +27,8 @@ object SupabaseClient {
     private const val KEY_AUTO_SYNC = "supabase_auto_sync"
 
     // Default Supabase project configuration (can be updated via in-app dialog)
-    const val DEFAULT_URL = ""
-    const val DEFAULT_KEY = ""
+    const val DEFAULT_URL = "https://xgkhnjisxitabwbckfgn.supabase.co"
+    const val DEFAULT_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhna2huamlzeGl0YWJ3YmNrZmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4MDU0MjYsImV4cCI6MjEwOTM4MTQyNn0.sMX-XSyWqGUq_fjK7qtplAHdya-zvQwiNvBSxo2HyUs"
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -41,11 +41,13 @@ object SupabaseClient {
     }
 
     fun getUrl(context: Context): String {
-        return getPrefs(context).getString(KEY_URL, DEFAULT_URL) ?: DEFAULT_URL
+        val saved = getPrefs(context).getString(KEY_URL, null)
+        return if (!saved.isNullOrBlank()) saved else DEFAULT_URL
     }
 
     fun getAnonKey(context: Context): String {
-        return getPrefs(context).getString(KEY_ANON_KEY, DEFAULT_KEY) ?: DEFAULT_KEY
+        val saved = getPrefs(context).getString(KEY_ANON_KEY, null)
+        return if (!saved.isNullOrBlank()) saved else DEFAULT_KEY
     }
 
     fun isAutoSyncEnabled(context: Context): Boolean {
