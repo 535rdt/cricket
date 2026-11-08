@@ -243,3 +243,12 @@ data class Match(
     val formattedRrr: String?
         get() = rrr?.let { String.format(java.util.Locale.US, "%.2f", it) }
 }
+
+data class SavedSharedMatch(
+    val matchCode: String,
+    val teamAName: String,
+    val teamBName: String,
+    val scoreSummary: String,
+    val lastUpdated: Long = System.currentTimeMillis(),
+    val match: Match
+)

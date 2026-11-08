@@ -14,6 +14,9 @@ class CricketStorage(context: Context) {
         private const val KEY_MATCH_HISTORY = "key_match_history"
         private const val KEY_SAVED_TEAMS = "key_saved_teams"
         private const val KEY_LAST_TEAMS = "key_last_teams"
+        private const val KEY_LAST_SPECTATED_CODE = "key_last_spectated_code"
+        private const val KEY_LAST_SPECTATED_MATCH = "key_last_spectated_match"
+        private const val KEY_SAVED_SHARED_MATCHES = "key_saved_shared_matches"
     }
 
     fun saveActiveMatch(match: Match?) {
@@ -74,6 +77,104 @@ class CricketStorage(context: Context) {
             array.put(matchToJson(m))
         }
         prefs.edit().putString(KEY_MATCH_HISTORY, array.toString()).apply()
+    }
+
+    // --- Saved Shared Matches & Offline Reconnect Support ---
+    fun saveSharedMatch(matchCode: String, match: Match) {
+        try {
+            val codeClean = matchCode.trim().uppercase()
+            val scoreSummary = "${match.currentInnings.battingTeamName} ${match.currentInnings.totalRuns}/${match.currentInnings.wickets} (${match.currentInnings.oversText}/${match.currentInnings.maxOvers} Ov)"
+
+            // 1. Save as latest spectated match
+            prefs.edit()
+                .putString(KEY_LAST_SPECTATED_CODE, codeClean)
+                .putString(KEY_LAST_SPECTATED_MATCH, matchToJson(match).toString())
+                .apply()
+
+            // 2. Add or update in saved shared list
+            val existingList = getSavedSharedMatches().filter { it.matchCode != codeClean }.toMutableList()
+            val newRecord = SavedSharedMatch(
+                matchCode = codeClean,
+                teamAName = match.teamA.name,
+                teamBName = match.teamB.name,
+                scoreSummary = scoreSummary,
+                lastUpdated = System.currentTimeMillis(),
+                match = match
+            )
+            existingList.add(0, newRecord)
+
+            // Keep top 15 shared matches
+            val trimmedList = existingList.take(15)
+            val jsonArray = JSONArray()
+            for (item in trimmedList) {
+                val obj = JSONObject().apply {
+                    put("matchCode", item.matchCode)
+                    put("teamAName", item.teamAName)
+                    put("teamBName", item.teamBName)
+                    put("scoreSummary", item.scoreSummary)
+                    put("lastUpdated", item.lastUpdated)
+                    put("match", matchToJson(item.match))
+                }
+                jsonArray.put(obj)
+            }
+            prefs.edit().putString(KEY_SAVED_SHARED_MATCHES, jsonArray.toString()).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun getSavedSharedMatches(): List<SavedSharedMatch> {
+        val jsonStr = prefs.getString(KEY_SAVED_SHARED_MATCHES, null) ?: return emptyList()
+        return try {
+            val array = JSONArray(jsonStr)
+            val list = mutableListOf<SavedSharedMatch>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val m = jsonToMatch(obj.getJSONObject("match"))
+                list.add(
+                    SavedSharedMatch(
+                        matchCode = obj.getString("matchCode"),
+                        teamAName = obj.optString("teamAName", m.teamA.name),
+                        teamBName = obj.optString("teamBName", m.teamB.name),
+                        scoreSummary = obj.optString("scoreSummary", ""),
+                        lastUpdated = obj.optLong("lastUpdated", 0L),
+                        match = m
+                    )
+                )
+            }
+            list
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    fun getLastSpectatedMatch(): Pair<String, Match>? {
+        val code = prefs.getString(KEY_LAST_SPECTATED_CODE, null) ?: return null
+        val matchJson = prefs.getString(KEY_LAST_SPECTATED_MATCH, null) ?: return null
+        return try {
+            val m = jsonToMatch(JSONObject(matchJson))
+            Pair(code, m)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun deleteSavedSharedMatch(matchCode: String) {
+        val list = getSavedSharedMatches().filter { it.matchCode != matchCode }
+        val jsonArray = JSONArray()
+        for (item in list) {
+            val obj = JSONObject().apply {
+                put("matchCode", item.matchCode)
+                put("teamAName", item.teamAName)
+                put("teamBName", item.teamBName)
+                put("scoreSummary", item.scoreSummary)
+                put("lastUpdated", item.lastUpdated)
+                put("match", matchToJson(item.match))
+            }
+            jsonArray.put(obj)
+        }
+        prefs.edit().putString(KEY_SAVED_SHARED_MATCHES, jsonArray.toString()).apply()
     }
 
     // --- Saved Teams Functionality ---

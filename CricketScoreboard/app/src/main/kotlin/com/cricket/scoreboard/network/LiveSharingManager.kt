@@ -239,7 +239,8 @@ object LiveSharingManager {
         context: Context,
         input: String,
         onMatchUpdate: (Match) -> Unit,
-        onError: (String) -> Unit
+        onError: (String) -> Unit,
+        onConnectionStateChanged: ((isReconnecting: Boolean) -> Unit)? = null
     ) {
         stopWatching()
         val target = input.trim()
@@ -284,27 +285,36 @@ object LiveSharingManager {
 
                     if (liveMatch != null) {
                         consecutiveErrors = 0
+                        // Automatically save shared match to local storage for instant reconnect & offline viewing
+                        storage.saveSharedMatch(target, liveMatch)
                         withContext(Dispatchers.Main) {
+                            onConnectionStateChanged?.invoke(false)
                             onMatchUpdate(liveMatch)
                         }
                     } else {
                         consecutiveErrors++
                     }
 
-                    if (consecutiveErrors >= 6) {
+                    if (consecutiveErrors in 3..5) {
                         withContext(Dispatchers.Main) {
-                            onError("Could not connect to live match. Ensure scorer has broadcast enabled.")
+                            onConnectionStateChanged?.invoke(true)
+                        }
+                    } else if (consecutiveErrors >= 6) {
+                        withContext(Dispatchers.Main) {
+                            onConnectionStateChanged?.invoke(true)
+                            onError("Connection lag / reconnecting... Viewing cached scoreboard.")
                         }
                     }
                 } catch (e: Exception) {
                     consecutiveErrors++
                     if (consecutiveErrors >= 6) {
                         withContext(Dispatchers.Main) {
-                            onError("Connection error: ${e.localizedMessage ?: "Unknown error"}")
+                            onConnectionStateChanged?.invoke(true)
+                            onError("Network hiccup: retrying live match automatically...")
                         }
                     }
                 }
-                delay(1800) // Poll every 1.8 seconds for smooth live updates
+                delay(if (consecutiveErrors > 3) 2500 else 1800) // Adaptive poll rate
             }
         }
     }

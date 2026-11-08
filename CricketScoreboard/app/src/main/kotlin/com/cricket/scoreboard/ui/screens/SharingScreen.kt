@@ -51,7 +51,14 @@ fun SharingScreen(
 
     // Tab state: 0 = Watch Another Scoreboard, 1 = Broadcast My Scoreboard
     var selectedTab by remember { mutableStateOf(if (uiState.isBroadcasting && !uiState.isSpectatorMode) 1 else 0) }
-    var inputCode by remember { mutableStateOf("") }
+    var inputCode by remember {
+        mutableStateOf(uiState.spectatorTarget.ifBlank { uiState.savedSharedMatches.firstOrNull()?.matchCode ?: "" })
+    }
+    LaunchedEffect(uiState.savedSharedMatches, uiState.spectatorTarget) {
+        if (inputCode.isBlank()) {
+            inputCode = uiState.spectatorTarget.ifBlank { uiState.savedSharedMatches.firstOrNull()?.matchCode ?: "" }
+        }
+    }
     var selectedScorecardInnings by remember { mutableStateOf(1) }
 
     fun copyToClipboard(label: String, text: String) {
@@ -156,10 +163,17 @@ Follow ball-by-ball updates live!
                     // ==========================================
 
                     // 1. Live Spectator Connection Banner
+                    val isReconnecting = uiState.isSpectatorReconnecting
+                    val bannerStatusColor = if (isReconnecting) PitchGold else TurfGreenLight
+                    val bannerBg = if (isReconnecting) PitchGold.copy(alpha = 0.12f) else TurfGreenMedium.copy(alpha = 0.12f)
+                    val bannerBorder = if (isReconnecting) PitchGold.copy(alpha = 0.6f) else TurfGreenMedium.copy(alpha = 0.6f)
+                    val bannerTitle = if (isReconnecting) "🟡 RECONNECTING: ${uiState.spectatorTarget}" else "🟢 LIVE SPECTATING: ${uiState.spectatorTarget}"
+                    val bannerSubtitle = if (isReconnecting) "Cached scoreboard active • Retrying in background..." else "Saved in app • Auto-syncing ball-by-ball"
+
                     Card(
                         shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = TurfGreenMedium.copy(alpha = 0.12f)),
-                        border = BorderStroke(1.5.dp, TurfGreenMedium.copy(alpha = 0.6f)),
+                        colors = CardDefaults.cardColors(containerColor = bannerBg),
+                        border = BorderStroke(1.5.dp, bannerBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -174,19 +188,19 @@ Follow ball-by-ball updates live!
                                 ) {
                                     Surface(
                                         shape = CircleShape,
-                                        color = TurfGreenLight,
+                                        color = bannerStatusColor,
                                         modifier = Modifier.size(10.dp)
                                     ) {}
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(
-                                            text = "🟢 LIVE SPECTATING: ${uiState.spectatorTarget}",
+                                            text = bannerTitle,
                                             fontWeight = FontWeight.Black,
                                             fontSize = 13.sp,
-                                            color = TurfGreenLight
+                                            color = bannerStatusColor
                                         )
                                         Text(
-                                            text = "Auto-syncing ball-by-ball from scorer",
+                                            text = bannerSubtitle,
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -194,6 +208,19 @@ Follow ball-by-ball updates live!
                                 }
 
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    // Save to Match History
+                                    FilledTonalIconButton(
+                                        onClick = { viewModel.saveSpectatedMatchToHistory() },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.BookmarkAdd,
+                                            contentDescription = "Save to History",
+                                            tint = bannerStatusColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
                                     FilledTonalIconButton(
                                         onClick = { viewModel.connectToLiveMatch(uiState.spectatorTarget) },
                                         modifier = Modifier.size(34.dp)
@@ -201,7 +228,7 @@ Follow ball-by-ball updates live!
                                         Icon(
                                             Icons.Default.Refresh,
                                             contentDescription = "Refresh",
-                                            tint = TurfGreenLight,
+                                            tint = bannerStatusColor,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -210,8 +237,8 @@ Follow ball-by-ball updates live!
                                         onClick = { viewModel.exitSpectatorMode() },
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                                         modifier = Modifier.height(34.dp),
-                                        border = BorderStroke(1.dp, TurfGreenMedium.copy(alpha = 0.6f)),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TurfGreenLight)
+                                        border = BorderStroke(1.dp, bannerBorder),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = bannerStatusColor)
                                     ) {
                                         Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
@@ -708,6 +735,144 @@ Follow ball-by-ball updates live!
                                     Icon(Icons.Default.Sensors, contentDescription = null, modifier = Modifier.size(20.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text("Connect & Watch Live Game", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    // Saved & Recent Shared Scoreboards Card (Helps with quick offline viewing & reconnecting)
+                    if (uiState.savedSharedMatches.isNotEmpty()) {
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, TurfGreenMedium.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.Bookmark,
+                                            contentDescription = null,
+                                            tint = TurfGreenMedium,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "SAVED SHARED SCOREBOARDS",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = TurfGreenLight,
+                                            letterSpacing = 0.8.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = "${uiState.savedSharedMatches.size} saved",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    uiState.savedSharedMatches.forEach { saved ->
+                                        Card(
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = TurfGreenMedium.copy(alpha = 0.18f)
+                                                    ) {
+                                                        Text(
+                                                            text = saved.matchCode,
+                                                            fontWeight = FontWeight.Black,
+                                                            fontSize = 12.sp,
+                                                            color = TurfGreenLight,
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                        )
+                                                    }
+
+                                                    IconButton(
+                                                        onClick = { viewModel.deleteSavedSharedMatch(saved.matchCode) },
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.DeleteOutline,
+                                                            contentDescription = "Remove",
+                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                Spacer(modifier = Modifier.height(6.dp))
+
+                                                Text(
+                                                    text = "${saved.teamAName}  vs  ${saved.teamBName}",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp
+                                                )
+
+                                                if (saved.scoreSummary.isNotBlank()) {
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text(
+                                                        text = saved.scoreSummary,
+                                                        fontSize = 12.sp,
+                                                        color = PitchGold,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                }
+
+                                                Spacer(modifier = Modifier.height(10.dp))
+
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Button(
+                                                        onClick = {
+                                                            inputCode = saved.matchCode
+                                                            viewModel.connectToLiveMatch(saved.matchCode)
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
+                                                        Icon(Icons.Default.Sensors, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text("⚡ Reconnect Live", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            inputCode = saved.matchCode
+                                                            viewModel.connectToLiveMatch(saved.matchCode)
+                                                        },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("View Saved", fontSize = 12.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

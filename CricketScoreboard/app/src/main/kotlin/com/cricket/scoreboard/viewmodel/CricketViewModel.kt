@@ -77,6 +77,8 @@ data class ScoreboardUiState(
     val showShareReportDialog: Boolean = false,
     val liveViewerLoading: Boolean = false,
     val liveViewerError: String? = null,
+    val isSpectatorReconnecting: Boolean = false,
+    val savedSharedMatches: List<SavedSharedMatch> = emptyList(),
     val statusMessage: String? = null
 )
 
@@ -92,6 +94,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         restoreActiveMatch()
         loadSavedTeams()
         loadLastMatchTeams()
+        loadSavedSharedMatches()
     }
 
     private fun loadDefaultPlayers() {
@@ -200,34 +203,75 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(showWatchLiveDialog = false, liveViewerError = null, liveViewerLoading = false) }
     }
 
+    fun loadSavedSharedMatches() {
+        val list = storage.getSavedSharedMatches()
+        _uiState.update { it.copy(savedSharedMatches = list) }
+    }
+
     fun connectToLiveMatch(inputCode: String) {
-        _uiState.update { it.copy(liveViewerLoading = true, liveViewerError = null) }
+        val target = inputCode.trim()
+        val cachedMatch = storage.getSavedSharedMatches().find { it.matchCode.equals(target, ignoreCase = true) }?.match
+            ?: (if (storage.getLastSpectatedMatch()?.first.equals(target, ignoreCase = true)) storage.getLastSpectatedMatch()?.second else null)
+
+        // Instantly display cached scoreboard if available for zero-latency reconnect
+        _uiState.update {
+            it.copy(
+                liveViewerLoading = cachedMatch == null,
+                liveViewerError = null,
+                isSpectatorMode = true,
+                spectatorTarget = target,
+                match = cachedMatch ?: it.match,
+                isSpectatorReconnecting = cachedMatch != null,
+                currentScreen = ActiveScreen.SHARING
+            )
+        }
+
         var hasNotifiedConnection = false
         LiveSharingManager.startWatching(
             context = getApplication(),
-            input = inputCode,
+            input = target,
             onMatchUpdate = { liveMatch ->
-                val isFirstConnect = !hasNotifiedConnection && !_uiState.value.isSpectatorMode
-                if (isFirstConnect) {
-                    hasNotifiedConnection = true
-                }
+                val isFirstConnect = !hasNotifiedConnection
+                hasNotifiedConnection = true
                 _uiState.update {
                     it.copy(
                         match = liveMatch,
                         isSpectatorMode = true,
-                        spectatorTarget = inputCode,
+                        spectatorTarget = target,
                         showWatchLiveDialog = false,
                         liveViewerLoading = false,
                         liveViewerError = null,
+                        isSpectatorReconnecting = false,
                         currentScreen = ActiveScreen.SHARING,
-                        statusMessage = if (isFirstConnect) "🟢 Connected to live match!" else it.statusMessage
+                        statusMessage = if (isFirstConnect) "🟢 Connected to live match!" else it.statusMessage,
+                        savedSharedMatches = storage.getSavedSharedMatches()
                     )
                 }
             },
             onError = { err ->
-                _uiState.update { it.copy(liveViewerLoading = false, liveViewerError = err) }
+                _uiState.update {
+                    it.copy(
+                        liveViewerLoading = false,
+                        liveViewerError = err,
+                        isSpectatorReconnecting = true
+                    )
+                }
+            },
+            onConnectionStateChanged = { isReconnecting ->
+                _uiState.update { it.copy(isSpectatorReconnecting = isReconnecting) }
             }
         )
+    }
+
+    fun saveSpectatedMatchToHistory() {
+        val currentMatch = _uiState.value.match ?: return
+        storage.saveCompletedMatch(currentMatch)
+        _uiState.update { it.copy(statusMessage = "💾 Scoreboard saved to Match History!") }
+    }
+
+    fun deleteSavedSharedMatch(matchCode: String) {
+        storage.deleteSavedSharedMatch(matchCode)
+        _uiState.update { it.copy(savedSharedMatches = storage.getSavedSharedMatches()) }
     }
 
     fun exitSpectatorMode() {
@@ -238,8 +282,10 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 isSpectatorMode = false,
                 spectatorTarget = "",
                 match = local,
+                isSpectatorReconnecting = false,
                 currentScreen = ActiveScreen.SHARING,
-                statusMessage = "Exited spectator mode."
+                statusMessage = "Exited spectator mode.",
+                savedSharedMatches = storage.getSavedSharedMatches()
             )
         }
     }
