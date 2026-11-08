@@ -5,8 +5,9 @@ import android.content.SharedPreferences
 import com.cricket.scoreboard.model.*
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
-class CricketStorage(context: Context) {
+class CricketStorage(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("cricket_scoreboard_prefs", Context.MODE_PRIVATE)
 
     companion object {
@@ -175,6 +176,28 @@ class CricketStorage(context: Context) {
             jsonArray.put(obj)
         }
         prefs.edit().putString(KEY_SAVED_SHARED_MATCHES, jsonArray.toString()).apply()
+    }
+
+    /**
+     * Completely wipes all SharedPreferences and app internal storage files
+     * (player photos, cache images, matches, and saved teams).
+     */
+    fun clearAllData() {
+        try {
+            prefs.edit().clear().apply()
+
+            val photosDir = File(context.filesDir, "player_photos")
+            if (photosDir.exists()) {
+                photosDir.deleteRecursively()
+            }
+
+            val cacheImages = File(context.cacheDir, "images")
+            if (cacheImages.exists()) {
+                cacheImages.deleteRecursively()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     // --- Saved Teams Functionality ---
