@@ -398,7 +398,7 @@ fun FullScorecardScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = TurfGreenDark),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Share Scorecard 📤", color = Color.White, fontSize = 12.sp)
+                            Text("Share Report (PNG/JPG) 📤", color = Color.White, fontSize = 12.sp)
                         }
                     }
                 }

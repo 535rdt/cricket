@@ -97,7 +97,13 @@ The pre-built, installable APK is available in the repository root:
 - Complete Batting stats (Runs, Balls, 4s, 6s, SR, dismissal info) and Bowling stats (O, M, R, W, Econ).
 - Fall of Wickets (FOW) timeline and Did Not Bat list.
 - **Match History**: Persistent match storage across app restarts.
-- **Share Summary**: 1-Tap text summary share to WhatsApp, SMS, or social media.
+- **🖼️ High-Res PNG & JPG Match Report Sharing** *(New!)*:
+  - Generates broadcast-quality, high-resolution (1080px) graphic scorecards with dark stadium gradients, gold & emerald accents, and player avatars.
+  - Choose between **PNG (Lossless HD)** and **JPG (Compact)** formats.
+  - Interactive dialog with real-time thumbnail preview.
+  - 1-Tap **Share Image** to WhatsApp, Instagram, Telegram, SMS, or email with scorecard caption attached.
+  - **Save to Gallery**: Saves directly to your phone's `Pictures/CricketScoreboard` album.
+  - Optional fallback to share plain text summary.
 
 ---
 

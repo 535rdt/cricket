@@ -342,6 +342,24 @@ class MainActivity : ComponentActivity() {
                                 onDismiss = { viewModel.dismissWatchLiveDialog() }
                             )
                         }
+
+                        if (uiState.showShareReportDialog && match != null) {
+                            ShareReportDialog(
+                                match = match,
+                                onShareImage = { format ->
+                                    viewModel.shareReportAsImage(context, format)
+                                    viewModel.dismissShareReportDialog()
+                                },
+                                onSaveToGallery = { format ->
+                                    viewModel.saveReportToGallery(context, format)
+                                },
+                                onShareText = {
+                                    viewModel.shareScorecardTextOnly(context)
+                                    viewModel.dismissShareReportDialog()
+                                },
+                                onDismiss = { viewModel.dismissShareReportDialog() }
+                            )
+                        }
                     }
                 }
             }

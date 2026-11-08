@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -148,6 +149,12 @@ fun MatchHistoryScreen(
                                     modifier = Modifier.height(36.dp)
                                 ) {
                                     Text("Scorecard", fontSize = 11.sp)
+                                }
+                                IconButton(
+                                    onClick = { viewModel.shareSpecificMatch(match) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = "Share Report", tint = PitchGold, modifier = Modifier.size(18.dp))
                                 }
                             }
                         }

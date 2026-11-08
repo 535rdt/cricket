@@ -72,6 +72,7 @@ data class ScoreboardUiState(
     val spectatorTarget: String = "",
     val showLiveSharingDialog: Boolean = false,
     val showWatchLiveDialog: Boolean = false,
+    val showShareReportDialog: Boolean = false,
     val liveViewerLoading: Boolean = false,
     val liveViewerError: String? = null,
     val statusMessage: String? = null
@@ -1270,8 +1271,59 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(showMatchEndDialog = false) }
     }
 
-    // Share scorecard summary text
+    // Share scorecard / match report (opens PNG/JPG/Text share dialog)
     fun shareScorecard(context: Context) {
+        val match = _uiState.value.match
+        if (match == null) {
+            _uiState.update { it.copy(statusMessage = "No match available to share!") }
+            return
+        }
+        _uiState.update { it.copy(showShareReportDialog = true) }
+    }
+
+    fun promptShareReport() {
+        val match = _uiState.value.match
+        if (match == null) {
+            _uiState.update { it.copy(statusMessage = "No match available to share!") }
+            return
+        }
+        _uiState.update { it.copy(showShareReportDialog = true) }
+    }
+
+    fun shareSpecificMatch(match: Match) {
+        _uiState.update {
+            it.copy(
+                match = match,
+                showShareReportDialog = true
+            )
+        }
+    }
+
+    fun dismissShareReportDialog() {
+        _uiState.update { it.copy(showShareReportDialog = false) }
+    }
+
+    fun shareReportAsImage(context: Context, format: com.cricket.scoreboard.export.ReportImageFormat) {
+        val match = _uiState.value.match ?: return
+        val summaryText = buildScorecardShareText(match)
+        com.cricket.scoreboard.export.MatchReportGenerator.shareReportImage(
+            context = context,
+            match = match,
+            format = format,
+            textCaption = summaryText
+        )
+    }
+
+    fun saveReportToGallery(context: Context, format: com.cricket.scoreboard.export.ReportImageFormat) {
+        val match = _uiState.value.match ?: return
+        com.cricket.scoreboard.export.MatchReportGenerator.saveReportToGallery(
+            context = context,
+            match = match,
+            format = format
+        )
+    }
+
+    fun shareScorecardTextOnly(context: Context) {
         val match = _uiState.value.match ?: return
         val text = buildScorecardShareText(match)
         val sendIntent = Intent().apply {

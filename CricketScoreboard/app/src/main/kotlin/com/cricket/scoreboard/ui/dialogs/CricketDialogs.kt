@@ -813,7 +813,7 @@ fun MatchEndDialog(
                     onClick = onShare,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("📤 Share Match Scorecard")
+                    Text("📤 Share Match Report (PNG/JPG)")
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
