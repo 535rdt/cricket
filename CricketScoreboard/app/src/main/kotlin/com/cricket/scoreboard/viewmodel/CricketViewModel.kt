@@ -202,10 +202,15 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
 
     fun connectToLiveMatch(inputCode: String) {
         _uiState.update { it.copy(liveViewerLoading = true, liveViewerError = null) }
+        var hasNotifiedConnection = false
         LiveSharingManager.startWatching(
             context = getApplication(),
             input = inputCode,
             onMatchUpdate = { liveMatch ->
+                val isFirstConnect = !hasNotifiedConnection && !_uiState.value.isSpectatorMode
+                if (isFirstConnect) {
+                    hasNotifiedConnection = true
+                }
                 _uiState.update {
                     it.copy(
                         match = liveMatch,
@@ -215,7 +220,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                         liveViewerLoading = false,
                         liveViewerError = null,
                         currentScreen = ActiveScreen.SHARING,
-                        statusMessage = "🔴 Connected to live match!"
+                        statusMessage = if (isFirstConnect) "🟢 Connected to live match!" else it.statusMessage
                     )
                 }
             },

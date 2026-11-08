@@ -107,13 +107,13 @@ Follow ball-by-ball updates live!
                         if (uiState.isSpectatorMode) {
                             Surface(
                                 shape = CircleShape,
-                                color = WicketRed,
+                                color = TurfGreenLight,
                                 modifier = Modifier.size(8.dp)
                             ) {}
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                         Text(
-                            text = if (uiState.isSpectatorMode) "🔴 Live Game Window" else "👀 Watch Scoreboard",
+                            text = if (uiState.isSpectatorMode) "🟢 Live Game Window" else "👀 Watch Scoreboard",
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp
                         )
@@ -161,8 +161,8 @@ Follow ball-by-ball updates live!
                     // 1. Live Spectator Connection Banner
                     Card(
                         shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = WicketRed.copy(alpha = 0.14f)),
-                        border = BorderStroke(1.5.dp, WicketRed.copy(alpha = 0.6f)),
+                        colors = CardDefaults.cardColors(containerColor = TurfGreenMedium.copy(alpha = 0.12f)),
+                        border = BorderStroke(1.5.dp, TurfGreenMedium.copy(alpha = 0.6f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -177,16 +177,16 @@ Follow ball-by-ball updates live!
                                 ) {
                                     Surface(
                                         shape = CircleShape,
-                                        color = WicketRed,
+                                        color = TurfGreenLight,
                                         modifier = Modifier.size(10.dp)
                                     ) {}
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(
-                                            text = "🔴 LIVE SPECTATING: ${uiState.spectatorTarget}",
+                                            text = "🟢 LIVE SPECTATING: ${uiState.spectatorTarget}",
                                             fontWeight = FontWeight.Black,
                                             fontSize = 13.sp,
-                                            color = WicketRed
+                                            color = TurfGreenLight
                                         )
                                         Text(
                                             text = "Auto-syncing ball-by-ball from scorer",
@@ -204,6 +204,7 @@ Follow ball-by-ball updates live!
                                         Icon(
                                             Icons.Default.Refresh,
                                             contentDescription = "Refresh",
+                                            tint = TurfGreenLight,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -212,7 +213,8 @@ Follow ball-by-ball updates live!
                                         onClick = { viewModel.exitSpectatorMode() },
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                                         modifier = Modifier.height(34.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = WicketRed)
+                                        border = BorderStroke(1.dp, TurfGreenMedium.copy(alpha = 0.6f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TurfGreenLight)
                                     ) {
                                         Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
                                         Spacer(modifier = Modifier.width(4.dp))

@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -21,6 +22,7 @@ import com.cricket.scoreboard.ui.screens.*
 import com.cricket.scoreboard.ui.theme.CricketScoreboardTheme
 import com.cricket.scoreboard.ui.theme.PitchGold
 import com.cricket.scoreboard.ui.theme.TurfGreenDark
+import com.cricket.scoreboard.ui.theme.TurfGreenLight
 import com.cricket.scoreboard.viewmodel.ActiveScreen
 import com.cricket.scoreboard.viewmodel.CricketViewModel
 
@@ -48,18 +50,27 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(
-                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    snackbarHost = {
+                        SnackbarHost(snackbarHostState) { data ->
+                            Snackbar(
+                                containerColor = TurfGreenDark,
+                                contentColor = Color.White,
+                                shape = RoundedCornerShape(12.dp),
+                                snackbarData = data
+                            )
+                        }
+                    },
                     topBar = {
                         TopAppBar(
                             title = {
                                 Text(
-                                    text = if (uiState.isSpectatorMode) "👁️ Spectating Match" else "🏏 Cricket Scoreboard",
+                                    text = if (uiState.isSpectatorMode) "🟢 Spectating Match" else "🏏 Cricket Scoreboard",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp
                                 )
                             },
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = if (uiState.isSpectatorMode) Color(0xFF5B1A1A) else TurfGreenDark,
+                                containerColor = TurfGreenDark,
                                 titleContentColor = Color.White,
                                 actionIconContentColor = Color.White
                             ),
@@ -139,7 +150,7 @@ class MainActivity : ComponentActivity() {
                                     BadgedBox(
                                         badge = {
                                             if (uiState.isSpectatorMode) {
-                                                Badge(containerColor = Color.Red)
+                                                Badge(containerColor = TurfGreenLight)
                                             } else if (uiState.isBroadcasting) {
                                                 Badge(containerColor = PitchGold)
                                             }
