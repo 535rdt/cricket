@@ -23,6 +23,7 @@ enum class ActiveScreen {
     LIVE_SCORING,
     FULL_SCORECARD,
     TEAMS,
+    SHARING,
     HISTORY
 }
 
@@ -211,7 +212,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                         spectatorTarget = inputCode,
                         showWatchLiveDialog = false,
                         liveViewerLoading = false,
-                        currentScreen = ActiveScreen.LIVE_SCORING,
+                        currentScreen = ActiveScreen.SHARING,
                         statusMessage = "🔴 Connected to live match!"
                     )
                 }
@@ -230,7 +231,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 isSpectatorMode = false,
                 spectatorTarget = "",
                 match = local,
-                currentScreen = if (local != null) ActiveScreen.LIVE_SCORING else ActiveScreen.SETUP,
+                currentScreen = ActiveScreen.SHARING,
                 statusMessage = "Exited spectator mode."
             )
         }

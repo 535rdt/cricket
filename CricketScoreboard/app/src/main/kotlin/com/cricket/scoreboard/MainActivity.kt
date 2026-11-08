@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
                                 selected = currentScreen == ActiveScreen.SETUP,
                                 onClick = { viewModel.setScreen(ActiveScreen.SETUP) },
                                 icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                                label = { Text("Setup", fontSize = 11.sp) }
+                                label = { Text("Setup", fontSize = 10.sp) }
                             )
 
                             NavigationBarItem(
@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 enabled = match != null,
                                 icon = { Icon(Icons.Default.SportsCricket, contentDescription = null) },
-                                label = { Text("Live", fontSize = 11.sp) }
+                                label = { Text("Live", fontSize = 10.sp) }
                             )
 
                             NavigationBarItem(
@@ -122,21 +122,43 @@ class MainActivity : ComponentActivity() {
                                 },
                                 enabled = match != null,
                                 icon = { Icon(Icons.Default.TableChart, contentDescription = null) },
-                                label = { Text("Scorecard", fontSize = 11.sp) }
+                                label = { Text("Scorecard", fontSize = 10.sp) }
                             )
 
                             NavigationBarItem(
                                 selected = currentScreen == ActiveScreen.TEAMS,
                                 onClick = { viewModel.setScreen(ActiveScreen.TEAMS) },
                                 icon = { Icon(Icons.Default.Groups, contentDescription = null) },
-                                label = { Text("Teams", fontSize = 11.sp) }
+                                label = { Text("Teams", fontSize = 10.sp) }
+                            )
+
+                            NavigationBarItem(
+                                selected = currentScreen == ActiveScreen.SHARING,
+                                onClick = { viewModel.setScreen(ActiveScreen.SHARING) },
+                                icon = {
+                                    BadgedBox(
+                                        badge = {
+                                            if (uiState.isSpectatorMode) {
+                                                Badge(containerColor = Color.Red)
+                                            } else if (uiState.isBroadcasting) {
+                                                Badge(containerColor = PitchGold)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            if (uiState.isSpectatorMode) Icons.Default.LiveTv else Icons.Default.Podcasts,
+                                            contentDescription = "Sharing"
+                                        )
+                                    }
+                                },
+                                label = { Text("Sharing", fontSize = 10.sp) }
                             )
 
                             NavigationBarItem(
                                 selected = currentScreen == ActiveScreen.HISTORY,
                                 onClick = { viewModel.setScreen(ActiveScreen.HISTORY) },
                                 icon = { Icon(Icons.Default.History, contentDescription = null) },
-                                label = { Text("History", fontSize = 11.sp) }
+                                label = { Text("History", fontSize = 10.sp) }
                             )
                         }
                     }
@@ -168,6 +190,12 @@ class MainActivity : ComponentActivity() {
                             }
                             ActiveScreen.TEAMS -> {
                                 TeamsScreen(
+                                    viewModel = viewModel,
+                                    onNavigateToSetup = { viewModel.setScreen(ActiveScreen.SETUP) }
+                                )
+                            }
+                            ActiveScreen.SHARING -> {
+                                SharingScreen(
                                     viewModel = viewModel,
                                     onNavigateToSetup = { viewModel.setScreen(ActiveScreen.SETUP) }
                                 )

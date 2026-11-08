@@ -13,17 +13,26 @@ The pre-built, installable APK is available in the repository root:
 
 ## 🚀 Key Features
 
-### 1. 🌐 Live Scoreboard Sharing (Local Wi-Fi & Cloud Pub/Sub)
-- **Real-Time Live Web Scoreboard**:
-  - Broadcast live ball-by-ball scores, striker/non-striker stats, bowler figures, and run rates to spectators and other teams.
-  - Spectators can open the live link in any browser (mobile, tablet, PC, smart TV) without installing the app.
+### 1. 🌐 Live Scoreboard Sharing & Spectator Hub ("Sharing" Bottom Bar Tab)
+- **Dedicated "Sharing" Tab in Bottom Bar** *(New!)*:
+  - Convenient 1-tap bottom bar navigation item to watch live games from other scoreboards or broadcast your own.
+  - Active visual badges (`🔴` for live spectator mode, `⭐` for active broadcasting).
+- **Game Shared Window of Another Scoreboard**:
+  - Enter the Match Code (e.g. `CRIC-8492`) or Host IP to connect directly to any scorer's scoreboard.
+  - Displays real-time streaming game window:
+    - Giant live score (`148/3 in 16.2 ov`), CRR, Target, and Required Run Rate.
+    - Live striker (`*`) & non-striker cards with runs, balls, 4s, 6s, and avatars.
+    - Active bowler with overs, maidens, runs conceded, wickets, and economy.
+    - Delivery strip for current over (`[0] [1] [4] [Wd] [6] [W]`).
+    - Full batting and bowling scorecards.
+    - Auto-syncs every 1.8 seconds in real time!
+    - 1-tap disconnect / refresh controls.
 - **Dual Connectivity Modes**:
   1. **Local Wi-Fi / Hotspot Server**: Built-in embedded HTTP server (`http://<device-ip>:8080`) works offline with zero internet access over hotspot.
   2. **Cloud Broadcast**: Instant real-time live sync over internet via pub/sub (`ntfy.sh/cricket_live_<id>`) with automated auto-refresh polling every 2 seconds.
-- **Interactive Share Dialog**:
-  - Displays instant **QR Code** for spectators to scan with their phone camera.
-  - **Copy Link** and Android system **Share** sheet (WhatsApp, Telegram, SMS, etc.).
-  - Real-time **Broadcast Status Badge** (Live indicator and spectator counter).
+- **Broadcast Your Own Scoreboard**:
+  - Dedicated tab to start/stop broadcasting your active game.
+  - Generates 6-character Match Code, browser web link, and WhatsApp share messages.
 
 ---
 
