@@ -77,6 +77,62 @@ class CricketStorage(context: Context) {
     }
 
     // --- Saved Teams Functionality ---
+    private val DEMO_TEAM_NAMES = setOf(
+        "india", "australia", "csk", "mi",
+        "chennai super kings", "mumbai indians",
+        "gully stars", "gully warriors", "turf kings",
+        "ind", "aus"
+    )
+
+    fun purgeAllDemoData() {
+        try {
+            // 1. Purge saved teams containing demo presets
+            val teams = getSavedTeams().filterNot { team ->
+                team.id.startsWith("preset_") ||
+                team.id.startsWith("demo_") ||
+                DEMO_TEAM_NAMES.contains(team.name.trim().lowercase())
+            }
+            saveAllTeams(teams)
+
+            // 2. Purge match history containing demo teams
+            val history = getMatchHistory().filterNot { match ->
+                DEMO_TEAM_NAMES.contains(match.teamA.name.trim().lowercase()) ||
+                DEMO_TEAM_NAMES.contains(match.teamB.name.trim().lowercase()) ||
+                match.id.startsWith("demo_")
+            }
+            val historyArray = JSONArray()
+            for (m in history) {
+                historyArray.put(matchToJson(m))
+            }
+            prefs.edit().putString(KEY_MATCH_HISTORY, historyArray.toString()).apply()
+
+            // 3. Purge active match if it's a demo match
+            val active = getActiveMatch()
+            if (active != null) {
+                if (DEMO_TEAM_NAMES.contains(active.teamA.name.trim().lowercase()) ||
+                    DEMO_TEAM_NAMES.contains(active.teamB.name.trim().lowercase()) ||
+                    active.id.startsWith("demo_")
+                ) {
+                    saveActiveMatch(null)
+                }
+            }
+
+            // 4. Purge last match rematch banner if demo
+            val lastTeams = getLastMatchTeams()
+            if (lastTeams != null) {
+                if (DEMO_TEAM_NAMES.contains(lastTeams.first.name.trim().lowercase()) ||
+                    DEMO_TEAM_NAMES.contains(lastTeams.second.name.trim().lowercase()) ||
+                    lastTeams.first.id.startsWith("preset_") ||
+                    lastTeams.second.id.startsWith("preset_")
+                ) {
+                    prefs.edit().remove(KEY_LAST_TEAMS).apply()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun getSavedTeams(): List<Team> {
         val jsonStr = prefs.getString(KEY_SAVED_TEAMS, null) ?: return emptyList()
         return try {
@@ -85,8 +141,11 @@ class CricketStorage(context: Context) {
             var hadPresets = false
             for (i in 0 until array.length()) {
                 val t = jsonToTeam(array.getJSONObject(i))
-                // Exclude any legacy demo presets
-                if (!t.id.startsWith("preset_")) {
+                // Exclude any legacy demo presets by ID or name
+                val isDemo = t.id.startsWith("preset_") ||
+                        t.id.startsWith("demo_") ||
+                        DEMO_TEAM_NAMES.contains(t.name.trim().lowercase())
+                if (!isDemo) {
                     list.add(t)
                 } else {
                     hadPresets = true

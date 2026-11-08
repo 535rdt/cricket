@@ -85,6 +85,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
     val uiState: StateFlow<ScoreboardUiState> = _uiState.asStateFlow()
 
     init {
+        storage.purgeAllDemoData()
         loadDefaultPlayers()
         restoreActiveMatch()
         loadSavedTeams()
