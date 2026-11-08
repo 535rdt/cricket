@@ -148,8 +148,8 @@ object LiveSharingManager {
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     doOutput = true
-                    connectTimeout = 3000
-                    readTimeout = 3000
+                    connectTimeout = 6000
+                    readTimeout = 6000
                     setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     setRequestProperty("Title", "Cricket Score Update")
                 }
@@ -316,21 +316,15 @@ object LiveSharingManager {
         watcherJob = null
     }
 
-    private fun fetchFromLocalServer(addressInput: String): String? {
-        val cleanUrl = if (addressInput.startsWith("http://") || addressInput.startsWith("https://")) {
-            if (addressInput.endsWith("/api/match")) addressInput else "${addressInput.trimEnd('/')}/api/match"
-        } else {
-            val portPart = if (!addressInput.contains(":")) ":8080" else ""
-            "http://$addressInput$portPart/api/match"
-        }
-
+    private fun fetchUrl(urlStr: String, connectTimeoutMs: Int = 6000, readTimeoutMs: Int = 6000): String? {
         var conn: HttpURLConnection? = null
         return try {
-            val url = URL(cleanUrl)
+            val url = URL(urlStr)
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 3000
-                readTimeout = 3000
+                instanceFollowRedirects = true
+                connectTimeout = connectTimeoutMs
+                readTimeout = readTimeoutMs
             }
             if (conn.responseCode in 200..299) {
                 conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
@@ -342,33 +336,57 @@ object LiveSharingManager {
         }
     }
 
-    private fun fetchFromCloud(matchCode: String): String? {
-        val cleanCode = matchCode.replace("-", "").trim().lowercase()
-        val urlStr = "https://ntfy.sh/cricket_live_$cleanCode/json?poll=1"
-        var conn: HttpURLConnection? = null
-        return try {
-            val url = URL(urlStr)
-            conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 3500
-                readTimeout = 3500
-            }
-            if (conn.responseCode in 200..299) {
-                val response = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                // ntfy /json?poll=1 returns lines of JSON events: {"event":"message", "message":"{...}"}
-                val lines = response.lines().filter { it.isNotBlank() }
-                if (lines.isNotEmpty()) {
-                    val lastLine = lines.last()
-                    val obj = JSONObject(lastLine)
-                    if (obj.has("message")) {
-                        obj.getString("message")
-                    } else lastLine
-                } else null
-            } else null
-        } catch (e: Exception) {
-            null
-        } finally {
-            conn?.disconnect()
+    private fun fetchFromLocalServer(addressInput: String): String? {
+        val cleanUrl = if (addressInput.startsWith("http://") || addressInput.startsWith("https://")) {
+            if (addressInput.endsWith("/api/match")) addressInput else "${addressInput.trimEnd('/')}/api/match"
+        } else {
+            val portPart = if (!addressInput.contains(":")) ":8080" else ""
+            "http://$addressInput$portPart/api/match"
         }
+
+        return fetchUrl(cleanUrl, 3000, 3000)
+    }
+
+    private fun fetchFromCloud(matchCode: String): String? {
+        val raw = matchCode.replace("-", "").trim().lowercase()
+        val cleanCode = if (!raw.startsWith("cric") && raw.length == 4) "cric$raw" else raw
+        val urlStr = "https://ntfy.sh/cricket_live_$cleanCode/json?poll=1"
+        val response = fetchUrl(urlStr, 5000, 5000) ?: return null
+
+        val lines = response.lines().filter { it.isNotBlank() }
+        if (lines.isEmpty()) return null
+
+        // Parse lines in reverse order (newest broadcast event first)
+        for (line in lines.reversed()) {
+            try {
+                val obj = JSONObject(line)
+
+                // 1. Check if ntfy stored payload as an attachment (standard for payloads > 4KB)
+                if (obj.has("attachment")) {
+                    val attachObj = obj.optJSONObject("attachment")
+                    val fileUrl = attachObj?.optString("url")
+                    if (!fileUrl.isNullOrEmpty()) {
+                        val attachmentContent = fetchUrl(fileUrl, 7000, 7000)
+                        if (!attachmentContent.isNullOrBlank() && attachmentContent.trimStart().startsWith("{")) {
+                            return attachmentContent
+                        }
+                    }
+                }
+
+                // 2. Check if payload was sent inline in the 'message' field
+                if (obj.has("message")) {
+                    val message = obj.optString("message", "")
+                    if (message.trimStart().startsWith("{")) {
+                        return message
+                    }
+                }
+            } catch (e: Exception) {
+                // If the line itself is raw JSON
+                if (line.trimStart().startsWith("{")) {
+                    return line
+                }
+            }
+        }
+        return null
     }
 }

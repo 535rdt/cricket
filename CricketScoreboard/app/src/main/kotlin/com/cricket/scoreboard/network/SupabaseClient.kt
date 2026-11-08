@@ -120,7 +120,8 @@ object SupabaseClient {
         try {
             val baseUrl = getUrl(context)
             val anonKey = getAnonKey(context)
-            val codeClean = matchCode.trim().uppercase()
+            val rawUpper = matchCode.trim().uppercase()
+            val codeClean = if (!rawUpper.startsWith("CRIC-") && rawUpper.length == 4) "CRIC-$rawUpper" else rawUpper
 
             val endpoint = "$baseUrl/rest/v1/live_matches?match_code=eq.$codeClean&select=match_data"
             val url = URL(endpoint)

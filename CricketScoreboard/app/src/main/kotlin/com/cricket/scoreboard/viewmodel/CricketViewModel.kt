@@ -213,6 +213,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                         spectatorTarget = inputCode,
                         showWatchLiveDialog = false,
                         liveViewerLoading = false,
+                        liveViewerError = null,
                         currentScreen = ActiveScreen.SHARING,
                         statusMessage = "🔴 Connected to live match!"
                     )
