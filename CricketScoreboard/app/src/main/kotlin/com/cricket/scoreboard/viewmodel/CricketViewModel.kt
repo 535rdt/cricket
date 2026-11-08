@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.cricket.scoreboard.data.CricketStorage
 import com.cricket.scoreboard.model.*
 import com.cricket.scoreboard.network.LiveSharingManager
+import com.cricket.scoreboard.network.SupabaseClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -750,6 +751,9 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 )
                 showMatchEnd = true
                 storage.saveCompletedMatch(updatedMatch)
+                viewModelScope.launch {
+                    SupabaseClient.uploadMatchHistory(getApplication(), updatedMatch)
+                }
             }
         } else {
             if (isWicket) {
@@ -1095,6 +1099,9 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
             players = players.map { it.copy(id = UUID.randomUUID().toString()) }
         )
         storage.saveTeam(teamToSave)
+        viewModelScope.launch {
+            SupabaseClient.uploadTeam(getApplication(), teamToSave)
+        }
         loadSavedTeams()
         _uiState.update {
             it.copy(
@@ -1122,6 +1129,9 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         val cleanName = team.name.trim().ifEmpty { "My Team" }
         val teamToSave = team.copy(name = cleanName)
         storage.saveTeam(teamToSave)
+        viewModelScope.launch {
+            SupabaseClient.uploadTeam(getApplication(), teamToSave)
+        }
         loadSavedTeams()
         _uiState.update {
             it.copy(

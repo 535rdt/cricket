@@ -113,8 +113,8 @@ object LiveSharingManager {
             }
         }
 
-        // Broadcast initial state to cloud
-        broadcastToCloud(cachedMatchJson)
+        // Broadcast initial state to cloud & Supabase
+        broadcastToCloud(context, match, cachedMatchJson)
 
         return BroadcastInfo(currentMatchCode, currentWebUrl, true)
     }
@@ -125,13 +125,23 @@ object LiveSharingManager {
         val storage = CricketStorage(context)
         cachedMatchJson = storage.matchToJsonString(match)
 
-        // Publish to cloud asynchronously
-        broadcastToCloud(cachedMatchJson)
+        // Publish to Supabase and cloud relay asynchronously
+        broadcastToCloud(context, match, cachedMatchJson)
     }
 
-    private fun broadcastToCloud(jsonStr: String) {
+    private fun broadcastToCloud(context: Context? = null, match: Match? = null, jsonStr: String) {
         if (currentMatchCode.isEmpty()) return
         scope.launch {
+            // 1. Upsert to Supabase if configured and enabled
+            if (context != null && match != null && SupabaseClient.isConfigured(context) && SupabaseClient.isAutoSyncEnabled(context)) {
+                try {
+                    SupabaseClient.upsertLiveMatch(context, currentMatchCode, match)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            // 2. Supplementary pub-sub relay fallback
             try {
                 val cleanCode = currentMatchCode.replace("-", "").lowercase()
                 val url = URL("https://ntfy.sh/cricket_live_$cleanCode")
@@ -248,21 +258,34 @@ object LiveSharingManager {
             var consecutiveErrors = 0
             while (isActive && isSpectating) {
                 try {
-                    val jsonStr = if (isLocalAddress) {
-                        fetchFromLocalServer(target)
-                    } else {
-                        fetchFromCloud(target)
+                    var liveMatch: Match? = null
+
+                    // 1. Check Supabase first if configured
+                    if (!isLocalAddress && SupabaseClient.isConfigured(context)) {
+                        try {
+                            liveMatch = SupabaseClient.fetchLiveMatch(context, target)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     }
 
-                    if (!jsonStr.isNullOrEmpty()) {
-                        val match = storage.jsonStringToMatch(jsonStr)
-                        if (match != null) {
-                            consecutiveErrors = 0
-                            withContext(Dispatchers.Main) {
-                                onMatchUpdate(match)
-                            }
+                    // 2. Fall back to local server or pub/sub relay
+                    if (liveMatch == null) {
+                        val jsonStr = if (isLocalAddress) {
+                            fetchFromLocalServer(target)
                         } else {
-                            consecutiveErrors++
+                            fetchFromCloud(target)
+                        }
+
+                        if (!jsonStr.isNullOrEmpty()) {
+                            liveMatch = storage.jsonStringToMatch(jsonStr)
+                        }
+                    }
+
+                    if (liveMatch != null) {
+                        consecutiveErrors = 0
+                        withContext(Dispatchers.Main) {
+                            onMatchUpdate(liveMatch)
                         }
                     } else {
                         consecutiveErrors++

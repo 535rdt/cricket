@@ -14,7 +14,7 @@ The pre-built, installable APK is available in the repository root:
 ## 🚀 Key Features
 
 ### 1. 🌐 Live Scoreboard Sharing & Spectator Hub ("Sharing" Bottom Bar Tab)
-- **Dedicated "Sharing" Tab in Bottom Bar** *(New!)*:
+- **Dedicated "Sharing" Tab in Bottom Bar**:
   - Convenient 1-tap bottom bar navigation item to watch live games from other scoreboards or broadcast your own.
   - Active visual badges (`🔴` for live spectator mode, `⭐` for active broadcasting).
 - **Game Shared Window of Another Scoreboard**:
@@ -27,9 +27,16 @@ The pre-built, installable APK is available in the repository root:
     - Full batting and bowling scorecards.
     - Auto-syncs every 1.8 seconds in real time!
     - 1-tap disconnect / refresh controls.
+- **⚡ Supabase Cloud Integration** *(New!)*:
+  - Backed by **Supabase PostgreSQL & Realtime**:
+    - **`live_matches`**: Ultra low-latency ball-by-ball match broadcasting.
+    - **`saved_teams`**: Cloud team rosters backup & cross-device sync.
+    - **`match_history`**: Permanent completed match scorecard archive.
+  - **In-App Cloud Settings Dialog**: Enter your own Supabase Project URL & Anon Key with built-in connection tester.
+  - **Turnkey SQL Script**: Included [`supabase_schema.sql`](supabase_schema.sql) ready to run in Supabase SQL Editor.
 - **Dual Connectivity Modes**:
   1. **Local Wi-Fi / Hotspot Server**: Built-in embedded HTTP server (`http://<device-ip>:8080`) works offline with zero internet access over hotspot.
-  2. **Cloud Broadcast**: Instant real-time live sync over internet via pub/sub (`ntfy.sh/cricket_live_<id>`) with automated auto-refresh polling every 2 seconds.
+  2. **Supabase & Cloud Broadcast**: Instant real-time live sync over internet with automated auto-refresh polling every 1.8 seconds.
 - **Broadcast Your Own Scoreboard**:
   - Dedicated tab to start/stop broadcasting your active game.
   - Generates 6-character Match Code, browser web link, and WhatsApp share messages.
