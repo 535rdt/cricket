@@ -5,9 +5,9 @@ A comprehensive, professional, modern Jetpack Compose Cricket Scoring & Team Man
 ---
 
 ## 📦 APK Download
-The pre-built, installable APK is available in the repository root:
-- **[`CricketScoreboard.apk`](CricketScoreboard.apk)**
-- Debug build artifact: `CricketScoreboard/app/build/outputs/apk/debug/app-debug.apk`
+Install the latest build on your Android phone:
+- 📲 **[Download CricketScoreboard.apk (Direct Download)](https://github.com/535rdt/cricket/raw/main/CricketScoreboard.apk)**
+- 📁 **[View CricketScoreboard.apk in Repository](https://github.com/535rdt/cricket/blob/main/CricketScoreboard.apk)**
 
 ---
 
