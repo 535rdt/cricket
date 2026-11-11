@@ -9,6 +9,7 @@ import com.cricket.scoreboard.data.CricketStorage
 import com.cricket.scoreboard.model.*
 import com.cricket.scoreboard.network.LiveSharingManager
 import com.cricket.scoreboard.network.SupabaseClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,6 +81,12 @@ data class ScoreboardUiState(
     val liveViewerError: String? = null,
     val isSpectatorReconnecting: Boolean = false,
     val savedSharedMatches: List<SavedSharedMatch> = emptyList(),
+    val sharingAdminPin: String = "1234",
+    val isSharingAdminUnlocked: Boolean = false,
+    val scorerName: String = "Official Scorer",
+    val customBroadcastCode: String = "",
+    val requireAdminPinToScore: Boolean = false,
+    val cloudActiveMatches: List<Triple<String, String, String>> = emptyList(),
     val statusMessage: String? = null
 )
 
@@ -97,6 +104,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         loadSavedPlayers()
         loadLastMatchTeams()
         loadSavedSharedMatches()
+        loadSharingAdminSettings()
     }
 
     private fun loadDefaultPlayers() {
@@ -145,8 +153,16 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
 
     private fun saveAndBroadcastMatch(match: Match?) {
         storage.saveActiveMatch(match)
-        if (match != null && LiveSharingManager.isBroadcasting) {
-            LiveSharingManager.onMatchUpdated(getApplication(), match)
+        if (match != null) {
+            if (LiveSharingManager.isBroadcasting) {
+                LiveSharingManager.onMatchUpdated(getApplication(), match)
+            } else if (_uiState.value.isSpectatorMode && _uiState.value.isSharingAdminUnlocked && _uiState.value.spectatorTarget.isNotBlank()) {
+                // Remote Admin Co-Scoring: broadcast update back to cloud for this match
+                viewModelScope.launch(Dispatchers.IO) {
+                    val targetCode = _uiState.value.spectatorTarget
+                    SupabaseClient.upsertLiveMatch(getApplication(), targetCode, match)
+                }
+            }
         }
     }
 
@@ -1436,6 +1452,84 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         _uiState.update { it.copy(showShareReportDialog = true) }
+    }
+
+    // --- Sharing Administration ---
+    fun loadSharingAdminSettings() {
+        val pin = storage.getSharingAdminPin()
+        val scorer = storage.getScorerName()
+        val customCode = storage.getCustomBroadcastCode()
+        val reqPin = storage.isRequireAdminPinEnabled()
+        _uiState.update {
+            it.copy(
+                sharingAdminPin = pin,
+                scorerName = scorer,
+                customBroadcastCode = customCode,
+                requireAdminPinToScore = reqPin
+            )
+        }
+    }
+
+    fun unlockSharingAdmin(enteredPin: String): Boolean {
+        val correctPin = _uiState.value.sharingAdminPin
+        return if (enteredPin.trim() == correctPin.trim()) {
+            _uiState.update { it.copy(isSharingAdminUnlocked = true, statusMessage = "👑 Admin access unlocked!") }
+            true
+        } else {
+            _uiState.update { it.copy(statusMessage = "❌ Incorrect Admin PIN!") }
+            false
+        }
+    }
+
+    fun lockSharingAdmin() {
+        _uiState.update { it.copy(isSharingAdminUnlocked = false, statusMessage = "🔒 Admin mode locked") }
+    }
+
+    fun updateSharingAdminPin(newPin: String) {
+        val clean = newPin.trim().ifEmpty { "1234" }
+        storage.setSharingAdminPin(clean)
+        _uiState.update { it.copy(sharingAdminPin = clean, statusMessage = "Admin PIN updated to $clean") }
+    }
+
+    fun updateScorerName(name: String) {
+        val clean = name.trim().ifEmpty { "Official Scorer" }
+        storage.setScorerName(clean)
+        _uiState.update { it.copy(scorerName = clean, statusMessage = "Scorer name updated") }
+    }
+
+    fun updateCustomBroadcastCode(newCode: String) {
+        val clean = newCode.trim().uppercase()
+        LiveSharingManager.updateCustomMatchCode(getApplication(), clean)
+        storage.setCustomBroadcastCode(clean)
+        _uiState.update {
+            it.copy(
+                customBroadcastCode = clean,
+                broadcastMatchCode = if (clean.isNotEmpty()) clean else it.broadcastMatchCode,
+                statusMessage = if (clean.isNotEmpty()) "Broadcast Match Code set to '$clean'" else "Reset to default code"
+            )
+        }
+    }
+
+    fun toggleRequireAdminPin(enable: Boolean) {
+        storage.setRequireAdminPinEnabled(enable)
+        _uiState.update { it.copy(requireAdminPinToScore = enable) }
+    }
+
+    fun refreshCloudMatches() {
+        viewModelScope.launch {
+            val matches = SupabaseClient.fetchAllLiveMatches(getApplication())
+            _uiState.update { it.copy(cloudActiveMatches = matches) }
+        }
+    }
+
+    fun deleteCloudMatch(matchCode: String) {
+        viewModelScope.launch {
+            val success = SupabaseClient.deleteLiveMatch(getApplication(), matchCode)
+            if (success) {
+                refreshCloudMatches()
+                _uiState.update { it.copy(statusMessage = "Deleted cloud match $matchCode") }
+            }
+        }
     }
 
     fun promptShareReport() {

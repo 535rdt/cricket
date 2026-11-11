@@ -19,7 +19,24 @@ class CricketStorage(private val context: Context) {
         private const val KEY_LAST_SPECTATED_MATCH = "key_last_spectated_match"
         private const val KEY_SAVED_SHARED_MATCHES = "key_saved_shared_matches"
         private const val KEY_SAVED_PLAYERS = "key_saved_players"
+        private const val KEY_SHARING_ADMIN_PIN = "key_sharing_admin_pin"
+        private const val KEY_SCORER_NAME = "key_scorer_name"
+        private const val KEY_CUSTOM_BROADCAST_CODE = "key_custom_broadcast_code"
+        private const val KEY_REQUIRE_ADMIN_PIN = "key_require_admin_pin"
     }
+
+    // --- Sharing & Administration Preferences ---
+    fun getSharingAdminPin(): String = prefs.getString(KEY_SHARING_ADMIN_PIN, "1234") ?: "1234"
+    fun setSharingAdminPin(pin: String) = prefs.edit().putString(KEY_SHARING_ADMIN_PIN, pin.trim().ifEmpty { "1234" }).apply()
+
+    fun getScorerName(): String = prefs.getString(KEY_SCORER_NAME, "Official Scorer") ?: "Official Scorer"
+    fun setScorerName(name: String) = prefs.edit().putString(KEY_SCORER_NAME, name.trim().ifEmpty { "Official Scorer" }).apply()
+
+    fun getCustomBroadcastCode(): String = prefs.getString(KEY_CUSTOM_BROADCAST_CODE, "") ?: ""
+    fun setCustomBroadcastCode(code: String) = prefs.edit().putString(KEY_CUSTOM_BROADCAST_CODE, code.trim().uppercase()).apply()
+
+    fun isRequireAdminPinEnabled(): Boolean = prefs.getBoolean(KEY_REQUIRE_ADMIN_PIN, false)
+    fun setRequireAdminPinEnabled(enable: Boolean) = prefs.edit().putBoolean(KEY_REQUIRE_ADMIN_PIN, enable).apply()
 
     fun saveActiveMatch(match: Match?) {
         if (match == null) {

@@ -76,8 +76,13 @@ object LiveSharingManager {
         cachedMatchJson = storage.matchToJsonString(match)
 
         if (currentMatchCode.isEmpty() || !isBroadcasting) {
-            val shortId = match.id.replace("-", "").takeLast(4).uppercase()
-            currentMatchCode = "CRIC-$shortId"
+            val custom = storage.getCustomBroadcastCode()
+            if (custom.isNotBlank()) {
+                currentMatchCode = custom
+            } else {
+                val shortId = match.id.replace("-", "").takeLast(4).uppercase()
+                currentMatchCode = "CRIC-$shortId"
+            }
         }
 
         val ip = getLocalIpAddress()
@@ -117,6 +122,18 @@ object LiveSharingManager {
         broadcastToCloud(context, match, cachedMatchJson)
 
         return BroadcastInfo(currentMatchCode, currentWebUrl, true)
+    }
+
+    fun updateCustomMatchCode(context: Context, newCode: String) {
+        val clean = newCode.trim().uppercase()
+        if (clean.isNotEmpty()) {
+            currentMatchCode = clean
+            val storage = CricketStorage(context)
+            storage.setCustomBroadcastCode(clean)
+            if (isBroadcasting && cachedMatch != null) {
+                broadcastToCloud(context, cachedMatch!!, cachedMatchJson)
+            }
+        }
     }
 
     fun onMatchUpdated(context: Context, match: Match) {

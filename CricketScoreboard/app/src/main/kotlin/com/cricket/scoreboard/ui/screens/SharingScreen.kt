@@ -34,7 +34,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cricket.scoreboard.model.*
+import com.cricket.scoreboard.network.LiveSharingManager
+import com.cricket.scoreboard.network.SupabaseClient
 import com.cricket.scoreboard.ui.components.PlayerAvatar
+import com.cricket.scoreboard.ui.dialogs.*
 import com.cricket.scoreboard.ui.theme.*
 import com.cricket.scoreboard.viewmodel.ActiveScreen
 import com.cricket.scoreboard.viewmodel.CricketViewModel
@@ -49,7 +52,7 @@ fun SharingScreen(
     val uiState by viewModel.uiState.collectAsState()
     val match = uiState.match
 
-    // Tab state: 0 = Watch Another Scoreboard, 1 = Broadcast My Scoreboard
+    // Tab state: 0 = Watch Scoreboard, 1 = Broadcast Scoreboard, 2 = Administration
     var selectedTab by remember { mutableStateOf(if (uiState.isBroadcasting && !uiState.isSpectatorMode) 1 else 0) }
     var inputCode by remember {
         mutableStateOf(uiState.spectatorTarget.ifBlank { uiState.savedSharedMatches.firstOrNull()?.matchCode ?: "" })
@@ -60,6 +63,19 @@ fun SharingScreen(
         }
     }
     var selectedScorecardInnings by remember { mutableStateOf(1) }
+
+    // Administration Dialog States
+    var showAdminUnlockDialog by remember { mutableStateOf(false) }
+    var showChangePinDialog by remember { mutableStateOf(false) }
+    var showChangeScorerDialog by remember { mutableStateOf(false) }
+    var showCustomCodeDialog by remember { mutableStateOf(false) }
+    var showSupabaseConfigDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 2) {
+            viewModel.refreshCloudMatches()
+        }
+    }
 
     fun copyToClipboard(label: String, text: String) {
         clipboardManager.setText(AnnotatedString(text))
@@ -97,7 +113,7 @@ Follow ball-by-ball updates live!
             .background(MaterialTheme.colorScheme.background)
     ) {
         // Top Tab Row
-        TabRow(
+        PrimaryTabRow(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.primary,
@@ -117,9 +133,9 @@ Follow ball-by-ball updates live!
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                         Text(
-                            text = if (uiState.isSpectatorMode) "🟢 Live Game Window" else "👀 Watch Scoreboard",
+                            text = if (uiState.isSpectatorMode) "🟢 Live Window" else "👀 Watch",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            fontSize = 11.sp
                         )
                     }
                 }
@@ -139,9 +155,31 @@ Follow ball-by-ball updates live!
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                         Text(
-                            text = "📢 Broadcast Scoreboard",
+                            text = "📢 Broadcast",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            )
+
+            Tab(
+                selected = selectedTab == 2,
+                onClick = { selectedTab = 2 },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (uiState.isSharingAdminUnlocked) {
+                            Surface(
+                                shape = CircleShape,
+                                color = PitchGold,
+                                modifier = Modifier.size(8.dp)
+                            ) {}
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = "🛡️ Administration",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
                         )
                     }
                 }
@@ -208,6 +246,25 @@ Follow ball-by-ball updates live!
                                 }
 
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    // Admin Unlock / Lock button
+                                    FilledTonalIconButton(
+                                        onClick = {
+                                            if (uiState.isSharingAdminUnlocked) {
+                                                viewModel.lockSharingAdmin()
+                                            } else {
+                                                showAdminUnlockDialog = true
+                                            }
+                                        },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            if (uiState.isSharingAdminUnlocked) Icons.Default.LockOpen else Icons.Default.AdminPanelSettings,
+                                            contentDescription = "Admin Scorer Mode",
+                                            tint = if (uiState.isSharingAdminUnlocked) TurfGreenMedium else PitchGold,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
                                     // Save to Match History
                                     FilledTonalIconButton(
                                         onClick = { viewModel.saveSpectatedMatchToHistory() },
@@ -581,6 +638,126 @@ Follow ball-by-ball updates live!
                         }
                     }
 
+                    // 4.5. Remote Co-Scorer Toolbar (Visible when Admin Access is Unlocked)
+                    if (uiState.isSharingAdminUnlocked) {
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.5.dp, PitchGold),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = PitchGold, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "👑 REMOTE CO-SCORER (ADMIN ACTIVE)",
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 11.sp,
+                                            color = PitchGold
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = { viewModel.lockSharingAdmin() },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("Lock 🔒", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Quick Run Buttons
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    listOf(0 to "•", 1 to "1", 2 to "2", 3 to "3", 4 to "4", 6 to "6").forEach { (runs, lbl) ->
+                                        Button(
+                                            onClick = { viewModel.recordBall(runsBat = runs) },
+                                            modifier = Modifier.weight(1f).height(38.dp),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = when (runs) {
+                                                    4 -> PitchGold
+                                                    6 -> TurfGreenMedium
+                                                    else -> MaterialTheme.colorScheme.surfaceVariant
+                                                }
+                                            ),
+                                            contentPadding = PaddingValues(0.dp)
+                                        ) {
+                                            Text(
+                                                text = lbl,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = if (runs == 4 || runs == 6) Color.Black else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Extras, Wicket & Strike Controls
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Button(
+                                        onClick = { viewModel.recordBall(extraType = ExtraType.WIDE, extraRuns = 1) },
+                                        modifier = Modifier.weight(1f).height(36.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = ExtraOrange),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("WD", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+
+                                    Button(
+                                        onClick = { viewModel.recordBall(extraType = ExtraType.NO_BALL, extraRuns = 1) },
+                                        modifier = Modifier.weight(1f).height(36.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = ExtraOrange),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("NB", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+
+                                    Button(
+                                        onClick = { viewModel.openWicketDialog() },
+                                        modifier = Modifier.weight(1.3f).height(36.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = WicketRed),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("WICKET", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = { viewModel.rotateStrikeManually() },
+                                        modifier = Modifier.weight(1.3f).height(36.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("⇄ Strike", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    FilledTonalIconButton(
+                                        onClick = { viewModel.undoLastDelivery() },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(Icons.Default.Undo, contentDescription = "Undo", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // 5. Scorecard / Report Actions
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -917,7 +1094,7 @@ Follow ball-by-ball updates live!
                     }
                 }
 
-            } else {
+            } else if (selectedTab == 1) {
                 // ==========================================
                 // TAB 1: BROADCAST MY SCOREBOARD
                 // ==========================================
@@ -1101,8 +1278,454 @@ Follow ball-by-ball updates live!
                         }
                     }
                 }
+            } else {
+                // ==========================================
+                // TAB 2: SHARING ADMINISTRATION
+                // ==========================================
+
+                // Admin Banner
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = TurfGreenDark),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "🛡️ SHARING ADMINISTRATION",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Manage match security, Admin PIN, custom codes, scorer identity & cloud database",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.85f)
+                                )
+                            }
+
+                            Surface(
+                                shape = CircleShape,
+                                color = if (uiState.isSharingAdminUnlocked) TurfGreenLight else PitchGold,
+                                modifier = Modifier.size(12.dp)
+                            ) {}
+                        }
+                    }
+                }
+
+                // 1. Scorer Security & Admin PIN Card
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "🔐 Scorer Security & Access Control",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Admin Status Row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (uiState.isSharingAdminUnlocked) TurfGreenMedium.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (uiState.isSharingAdminUnlocked) "👑 Admin Access: UNLOCKED" else "🔒 Admin Access: LOCKED",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (uiState.isSharingAdminUnlocked) TurfGreenMedium else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (uiState.isSharingAdminUnlocked) "Remote co-scoring & match control enabled" else "Enter Admin PIN to unlock full match controls",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            if (uiState.isSharingAdminUnlocked) {
+                                OutlinedButton(
+                                    onClick = { viewModel.lockSharingAdmin() },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(34.dp)
+                                ) {
+                                    Text("Lock", fontSize = 11.sp)
+                                }
+                            } else {
+                                Button(
+                                    onClick = { showAdminUnlockDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PitchGold),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(34.dp)
+                                ) {
+                                    Text("Unlock", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Scorer Identity
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Active Scorer Name", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(uiState.scorerName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            IconButton(onClick = { showChangeScorerDialog = true }) {
+                                Icon(Icons.Default.Edit, contentDescription = "Edit Scorer Name", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                        // Match Admin PIN
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Match Admin PIN", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = if (uiState.isSharingAdminUnlocked) uiState.sharingAdminPin else "••••",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 2.sp
+                                )
+                            }
+                            Button(
+                                onClick = { showChangePinDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Change PIN", fontSize = 11.sp)
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                        // Require Admin PIN to score switch
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Protect Scoring with PIN", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Require Admin PIN before entering runs or modifying match", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = uiState.requireAdminPinToScore,
+                                onCheckedChange = { viewModel.toggleRequireAdminPin(it) }
+                            )
+                        }
+                    }
+                }
+
+                // 2. Broadcast Channel & Match Code Administration
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "⚡ Broadcast Channel & Match Code",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Custom Match Code Setting
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Broadcast Match Code", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = uiState.customBroadcastCode.ifBlank { uiState.broadcastMatchCode.ifBlank { "Auto: CRIC-XXXX" } },
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 17.sp,
+                                    color = PitchGold
+                                )
+                                Text(
+                                    text = if (uiState.customBroadcastCode.isNotBlank()) "Custom memorable code active" else "Default auto code active",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Button(
+                                onClick = { showCustomCodeDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Edit Code", fontSize = 11.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Hotspot IP & Web URL
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Local Ground Hotspot URL", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = "http://${LiveSharingManager.getLocalIpAddress()}:8080",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TurfGreenMedium
+                                )
+                            }
+                            IconButton(onClick = { copyToClipboard("Hotspot URL", "http://${LiveSharingManager.getLocalIpAddress()}:8080") }) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+
+                // 3. Supabase Cloud Database & Active Matches Card
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CloudSync, contentDescription = null, tint = TurfGreenMedium, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "☁️ Supabase Cloud & Active Matches",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Connection Status & Config Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (SupabaseClient.isConfigured(context)) TurfGreenLight else Color.Gray,
+                                    modifier = Modifier.size(8.dp)
+                                ) {}
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (SupabaseClient.isConfigured(context)) "PostgreSQL Realtime Connected" else "Cloud Not Configured",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilledTonalIconButton(
+                                    onClick = { viewModel.refreshCloudMatches() },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh Matches", modifier = Modifier.size(16.dp))
+                                }
+
+                                OutlinedButton(
+                                    onClick = { showSupabaseConfigDialog = true },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Config", fontSize = 11.sp)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Cloud Matches List
+                        Text(
+                            text = "Live Matches on Cloud Server (${uiState.cloudActiveMatches.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        if (uiState.cloudActiveMatches.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                    .padding(14.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("No active matches found in cloud database.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                uiState.cloudActiveMatches.forEach { (code, teams, updated) ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(code, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = PitchGold)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(teams, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            }
+                                            if (updated.isNotBlank()) {
+                                                Text("Updated: $updated", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            IconButton(
+                                                onClick = {
+                                                    viewModel.connectToLiveMatch(code)
+                                                    selectedTab = 0
+                                                },
+                                                modifier = Modifier.size(30.dp)
+                                            ) {
+                                                Icon(Icons.Default.Visibility, contentDescription = "Watch", tint = TurfGreenMedium, modifier = Modifier.size(16.dp))
+                                            }
+                                            IconButton(
+                                                onClick = { viewModel.deleteCloudMatch(code) },
+                                                modifier = Modifier.size(30.dp)
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Sharing Diagnostics Card
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "📊 SHARING TELEMETRY & SYSTEM HEALTH",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("• Local HTTP Server: Active (Port 8080)", fontSize = 11.sp)
+                        Text("• Supabase Cloud Realtime: ${if (SupabaseClient.isConfigured(context)) "Online" else "Offline"}", fontSize = 11.sp)
+                        Text("• Cloud Relay Fallback: Active (ntfy)", fontSize = 11.sp)
+                        Text("• Polling Latency: 1.8 seconds adaptive", fontSize = 11.sp)
+                    }
+                }
             }
         }
+    }
+
+    // Administration Modals
+    if (showAdminUnlockDialog) {
+        AdminUnlockDialog(
+            onUnlock = { pin -> viewModel.unlockSharingAdmin(pin) },
+            onDismiss = { showAdminUnlockDialog = false }
+        )
+    }
+
+    if (showChangePinDialog) {
+        ChangeAdminPinDialog(
+            currentPin = uiState.sharingAdminPin,
+            onSavePin = { newPin -> viewModel.updateSharingAdminPin(newPin) },
+            onDismiss = { showChangePinDialog = false }
+        )
+    }
+
+    if (showChangeScorerDialog) {
+        ChangeScorerNameDialog(
+            currentName = uiState.scorerName,
+            onSaveName = { newName -> viewModel.updateScorerName(newName) },
+            onDismiss = { showChangeScorerDialog = false }
+        )
+    }
+
+    if (showCustomCodeDialog) {
+        CustomMatchCodeDialog(
+            currentCode = uiState.customBroadcastCode,
+            onSaveCode = { code -> viewModel.updateCustomBroadcastCode(code) },
+            onResetToAuto = { viewModel.updateCustomBroadcastCode("") },
+            onDismiss = { showCustomCodeDialog = false }
+        )
+    }
+
+    if (showSupabaseConfigDialog) {
+        SupabaseAdminDialog(
+            onDismiss = {
+                showSupabaseConfigDialog = false
+                viewModel.refreshCloudMatches()
+            }
+        )
     }
 }
 

@@ -158,6 +158,72 @@ object SupabaseClient {
     }
 
     /**
+     * Administration: deletes a specific live match from Supabase live_matches table.
+     */
+    suspend fun deleteLiveMatch(context: Context, matchCode: String): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured(context)) return@withContext false
+        try {
+            val baseUrl = getUrl(context)
+            val anonKey = getAnonKey(context)
+            val clean = matchCode.trim().uppercase()
+            val endpoint = "$baseUrl/rest/v1/live_matches?match_code=eq.$clean"
+            val url = URL(endpoint)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "DELETE"
+                connectTimeout = 4000
+                readTimeout = 4000
+                setRequestProperty("apikey", anonKey)
+                setRequestProperty("Authorization", "Bearer $anonKey")
+            }
+            val code = conn.responseCode
+            conn.disconnect()
+            code in 200..299
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Administration: fetches summary list of active matches in Supabase.
+     */
+    suspend fun fetchAllLiveMatches(context: Context): List<Triple<String, String, String>> = withContext(Dispatchers.IO) {
+        if (!isConfigured(context)) return@withContext emptyList()
+        try {
+            val baseUrl = getUrl(context)
+            val anonKey = getAnonKey(context)
+            val endpoint = "$baseUrl/rest/v1/live_matches?select=match_code,team_a_name,team_b_name,last_updated&order=last_updated.desc"
+            val url = URL(endpoint)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 4000
+                readTimeout = 4000
+                setRequestProperty("apikey", anonKey)
+                setRequestProperty("Authorization", "Bearer $anonKey")
+                setRequestProperty("Accept", "application/json")
+            }
+            if (conn.responseCode in 200..299) {
+                val responseStr = BufferedReader(InputStreamReader(conn.inputStream, "UTF-8")).use { it.readText() }
+                conn.disconnect()
+                val array = JSONArray(responseStr)
+                val list = mutableListOf<Triple<String, String, String>>()
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val code = obj.optString("match_code", "")
+                    val teams = "${obj.optString("team_a_name", "Team A")} vs ${obj.optString("team_b_name", "Team B")}"
+                    val updated = obj.optString("last_updated", "")
+                    list.add(Triple(code, teams, updated))
+                }
+                list
+            } else {
+                conn.disconnect()
+                emptyList()
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
      * Cloud sync: uploads a custom team to Supabase saved_teams table.
      */
     suspend fun uploadTeam(context: Context, team: Team): Boolean = withContext(Dispatchers.IO) {
