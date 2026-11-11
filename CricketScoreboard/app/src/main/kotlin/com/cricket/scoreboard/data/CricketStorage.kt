@@ -18,6 +18,7 @@ class CricketStorage(private val context: Context) {
         private const val KEY_LAST_SPECTATED_CODE = "key_last_spectated_code"
         private const val KEY_LAST_SPECTATED_MATCH = "key_last_spectated_match"
         private const val KEY_SAVED_SHARED_MATCHES = "key_saved_shared_matches"
+        private const val KEY_SAVED_PLAYERS = "key_saved_players"
     }
 
     fun saveActiveMatch(match: Match?) {
@@ -338,6 +339,92 @@ class CricketStorage(private val context: Context) {
             return Pair(history.first().teamA, history.first().teamB)
         }
         return null
+    }
+
+    // --- Saved Individual Players (Player Pool / Roster) ---
+    fun getSavedPlayers(): List<Player> {
+        val jsonStr = prefs.getString(KEY_SAVED_PLAYERS, null) ?: return emptyList()
+        return try {
+            val array = JSONArray(jsonStr)
+            val list = mutableListOf<Player>()
+            for (i in 0 until array.length()) {
+                val po = array.getJSONObject(i)
+                list.add(
+                    Player(
+                        id = po.optString("id", java.util.UUID.randomUUID().toString()),
+                        name = po.getString("name"),
+                        role = try {
+                            PlayerRole.valueOf(po.optString("role", PlayerRole.ALL_ROUNDER.name))
+                        } catch (e: Exception) {
+                            PlayerRole.ALL_ROUNDER
+                        },
+                        isCaptain = po.optBoolean("isCaptain", false),
+                        isWicketKeeper = po.optBoolean("isWicketKeeper", false),
+                        photoUri = po.optString("photoUri").ifEmpty { null }
+                    )
+                )
+            }
+            list
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    fun savePlayer(player: Player) {
+        val current = getSavedPlayers().toMutableList()
+        val index = current.indexOfFirst {
+            it.id == player.id || it.name.trim().equals(player.name.trim(), ignoreCase = true)
+        }
+        if (index >= 0) {
+            current[index] = player
+        } else {
+            current.add(0, player)
+        }
+        saveAllPlayers(current)
+    }
+
+    fun saveAllPlayers(players: List<Player>) {
+        val array = JSONArray()
+        for (p in players) {
+            val po = JSONObject().apply {
+                put("id", p.id)
+                put("name", p.name.trim())
+                put("role", p.role.name)
+                put("isCaptain", p.isCaptain)
+                put("isWicketKeeper", p.isWicketKeeper)
+                if (p.photoUri != null) put("photoUri", p.photoUri)
+            }
+            array.put(po)
+        }
+        prefs.edit().putString(KEY_SAVED_PLAYERS, array.toString()).apply()
+    }
+
+    fun deleteSavedPlayer(playerId: String) {
+        val current = getSavedPlayers().filter { it.id != playerId }
+        saveAllPlayers(current)
+    }
+
+    fun importPlayersFromTeams(): Int {
+        val teams = getSavedTeams()
+        val existing = getSavedPlayers().toMutableList()
+        var addedCount = 0
+        for (team in teams) {
+            for (p in team.players) {
+                val cleanName = p.name.trim()
+                if (cleanName.isNotBlank() &&
+                    !cleanName.startsWith("Player ", ignoreCase = true) &&
+                    existing.none { it.name.trim().equals(cleanName, ignoreCase = true) }
+                ) {
+                    existing.add(p.copy(id = java.util.UUID.randomUUID().toString(), isCaptain = false, isWicketKeeper = false))
+                    addedCount++
+                }
+            }
+        }
+        if (addedCount > 0) {
+            saveAllPlayers(existing)
+        }
+        return addedCount
     }
 
     // JSON serialization helpers

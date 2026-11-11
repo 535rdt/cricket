@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.cricket.scoreboard.model.PlayerRole
 import com.cricket.scoreboard.model.TossChoice
 import com.cricket.scoreboard.ui.components.PlayerAvatar
+import com.cricket.scoreboard.ui.dialogs.PlayerPoolPickerDialog
 import com.cricket.scoreboard.ui.theme.PitchGold
 import com.cricket.scoreboard.ui.theme.TurfGreenDark
 import com.cricket.scoreboard.ui.theme.TurfGreenMedium
@@ -38,7 +41,10 @@ fun MatchSetupScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val setup = uiState.setup
+    val savedPlayers = uiState.savedPlayers
     var selectedTab by remember { mutableStateOf(0) } // 0: Match Info, 1: Team A Squad, 2: Team B Squad
+    var showPoolMultiPickerForSquad by remember { mutableStateOf(false) }
+    var pickingSlotIndex by remember { mutableStateOf<Int?>(null) }
 
     LazyColumn(
         modifier = Modifier
@@ -896,7 +902,7 @@ fun MatchSetupScreen(
                     ) {
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Save This Team", fontSize = 12.sp)
+                        Text("Save Team", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                     OutlinedButton(
                         onClick = { viewModel.openSavedTeamsDialog(isTeamA) },
@@ -905,7 +911,64 @@ fun MatchSetupScreen(
                     ) {
                         Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Load Saved Team", fontSize = 12.sp)
+                        Text("Load Team", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    if (savedPlayers.isNotEmpty()) {
+                        Button(
+                            onClick = { showPoolMultiPickerForSquad = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = PitchGold),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1.1f).height(38.dp)
+                        ) {
+                            Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color.Black, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("From Pool", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Quick-Add Horizontal Chips from Pool (1-tap add/fill without typing!)
+                if (savedPlayers.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "⚡ Quick-Add from Pool (Tap to add):",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TurfGreenMedium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp)
+                    ) {
+                        items(savedPlayers) { sp ->
+                            val inSquad = players.any { it.name.trim().equals(sp.name.trim(), ignoreCase = true) }
+                            FilterChip(
+                                selected = inSquad,
+                                onClick = {
+                                    if (!inSquad) {
+                                        val placeholderIdx = players.indexOfFirst {
+                                            it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null
+                                        }
+                                        if (placeholderIdx != -1) {
+                                            viewModel.replacePlayerInSetup(isTeamA, placeholderIdx, sp)
+                                        } else {
+                                            viewModel.addPlayerToCurrentSetup(isTeamA, sp)
+                                        }
+                                    }
+                                },
+                                leadingIcon = {
+                                    PlayerAvatar(photoUri = sp.photoUri, name = sp.name, size = 18.dp)
+                                },
+                                label = {
+                                    Text(
+                                        if (inSquad) "✓ ${sp.name}" else "+ ${sp.name}",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (inSquad) FontWeight.Normal else FontWeight.Bold
+                                    )
+                                }
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -952,7 +1015,22 @@ fun MatchSetupScreen(
                             textStyle = MaterialTheme.typography.bodyMedium
                         )
 
-                        Spacer(modifier = Modifier.width(6.dp))
+                        // Pick from pool icon button for this specific slot
+                        if (savedPlayers.isNotEmpty()) {
+                            IconButton(
+                                onClick = { pickingSlotIndex = index },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.PersonSearch,
+                                    contentDescription = "Pick player from pool",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
 
                         // Captain button
                         FilterChip(
@@ -996,5 +1074,51 @@ fun MatchSetupScreen(
             }
             Spacer(modifier = Modifier.height(30.dp))
         }
+    }
+
+    // Modal: Multi-Select Pool Picker Dialog for Squad
+    if (showPoolMultiPickerForSquad) {
+        val isTeamA = selectedTab == 1
+        val currentSquad = if (isTeamA) setup.teamAPlayers else setup.teamBPlayers
+        PlayerPoolPickerDialog(
+            savedPlayers = savedPlayers,
+            alreadySelectedPlayerNames = currentSquad.map { it.name }.toSet(),
+            isMultiSelect = true,
+            onPlayersSelected = { selectedList ->
+                selectedList.forEach { sel ->
+                    val squad = if (isTeamA) viewModel.uiState.value.setup.teamAPlayers else viewModel.uiState.value.setup.teamBPlayers
+                    if (!squad.any { it.name.trim().equals(sel.name.trim(), ignoreCase = true) }) {
+                        val placeholderIdx = squad.indexOfFirst {
+                            it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null
+                        }
+                        if (placeholderIdx != -1) {
+                            viewModel.replacePlayerInSetup(isTeamA, placeholderIdx, sel)
+                        } else {
+                            viewModel.addPlayerToCurrentSetup(isTeamA, sel)
+                        }
+                    }
+                }
+                showPoolMultiPickerForSquad = false
+            },
+            onDismiss = { showPoolMultiPickerForSquad = false }
+        )
+    }
+
+    // Modal: Single-select Pool Picker Dialog to swap or fill a specific slot
+    pickingSlotIndex?.let { slotIndex ->
+        val isTeamA = selectedTab == 1
+        val currentSquad = if (isTeamA) setup.teamAPlayers else setup.teamBPlayers
+        PlayerPoolPickerDialog(
+            savedPlayers = savedPlayers,
+            alreadySelectedPlayerNames = currentSquad.map { it.name }.toSet(),
+            isMultiSelect = false,
+            onPlayersSelected = { selectedList ->
+                if (selectedList.isNotEmpty()) {
+                    viewModel.replacePlayerInSetup(isTeamA, slotIndex, selectedList.first())
+                }
+                pickingSlotIndex = null
+            },
+            onDismiss = { pickingSlotIndex = null }
+        )
     }
 }

@@ -64,6 +64,7 @@ data class ScoreboardUiState(
     val saveTeamIsTeamA: Boolean = true,
     val showNewGameDialog: Boolean = false,
     val savedTeams: List<Team> = emptyList(),
+    val savedPlayers: List<Player> = emptyList(),
     val lastMatchTeams: Pair<Team, Team>? = null,
     val pendingWicketType: WicketType? = null,
     val pendingDismissedPlayerId: String? = null,
@@ -93,6 +94,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         loadDefaultPlayers()
         restoreActiveMatch()
         loadSavedTeams()
+        loadSavedPlayers()
         loadLastMatchTeams()
         loadSavedSharedMatches()
     }
@@ -1189,6 +1191,97 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
             it.copy(
                 statusMessage = "Team '$cleanName' saved!"
             )
+        }
+    }
+
+    // --- Saved Players & Player Pool Management ---
+    fun loadSavedPlayers() {
+        val players = storage.getSavedPlayers()
+        _uiState.update { it.copy(savedPlayers = players) }
+    }
+
+    fun saveIndividualPlayer(player: Player) {
+        val cleanName = player.name.trim().ifEmpty { "Player" }
+        val playerToSave = player.copy(name = cleanName)
+        storage.savePlayer(playerToSave)
+        loadSavedPlayers()
+        _uiState.update { it.copy(statusMessage = "Player '$cleanName' saved to pool!") }
+    }
+
+    fun deleteIndividualPlayer(playerId: String) {
+        storage.deleteSavedPlayer(playerId)
+        loadSavedPlayers()
+        _uiState.update { it.copy(statusMessage = "Player removed from pool.") }
+    }
+
+    fun importPlayersFromTeams() {
+        val count = storage.importPlayersFromTeams()
+        loadSavedPlayers()
+        _uiState.update {
+            it.copy(
+                statusMessage = if (count > 0) "Imported $count players from saved teams!" else "All team players already in pool."
+            )
+        }
+    }
+
+    fun addPlayerToTeam(teamId: String, player: Player) {
+        val team = storage.getSavedTeams().find { it.id == teamId } ?: return
+        if (team.players.any { it.name.trim().equals(player.name.trim(), ignoreCase = true) }) {
+            _uiState.update { it.copy(statusMessage = "${player.name} is already in ${team.name}!") }
+            return
+        }
+        val updatedTeam = team.copy(players = team.players + player.copy(id = UUID.randomUUID().toString()))
+        updateOrSaveTeam(updatedTeam)
+        _uiState.update { it.copy(statusMessage = "Added ${player.name} to ${team.name}!") }
+    }
+
+    fun addPlayerToCurrentSetup(isTeamA: Boolean, player: Player) {
+        _uiState.update { state ->
+            val curSetup = state.setup
+            val currentList = if (isTeamA) curSetup.teamAPlayers else curSetup.teamBPlayers
+            if (currentList.any { it.name.trim().equals(player.name.trim(), ignoreCase = true) }) {
+                state.copy(statusMessage = "${player.name} is already in this team!")
+            } else {
+                val cloned = player.copy(id = UUID.randomUUID().toString())
+                val updated = currentList + cloned
+                val newCount = maxOf(curSetup.playersPerSide, updated.size)
+                if (isTeamA) {
+                    state.copy(
+                        setup = curSetup.copy(teamAPlayers = updated, playersPerSide = newCount),
+                        statusMessage = "Added ${player.name} to Team 1"
+                    )
+                } else {
+                    state.copy(
+                        setup = curSetup.copy(teamBPlayers = updated, playersPerSide = newCount),
+                        statusMessage = "Added ${player.name} to Team 2"
+                    )
+                }
+            }
+        }
+    }
+
+    fun replacePlayerInSetup(isTeamA: Boolean, index: Int, player: Player) {
+        _uiState.update { state ->
+            val curSetup = state.setup
+            val currentList = (if (isTeamA) curSetup.teamAPlayers else curSetup.teamBPlayers).toMutableList()
+            if (index in currentList.indices) {
+                currentList[index] = player.copy(
+                    id = currentList[index].id,
+                    isCaptain = currentList[index].isCaptain,
+                    isWicketKeeper = currentList[index].isWicketKeeper
+                )
+                if (isTeamA) {
+                    state.copy(
+                        setup = curSetup.copy(teamAPlayers = currentList),
+                        statusMessage = "Assigned ${player.name} to slot ${index + 1}"
+                    )
+                } else {
+                    state.copy(
+                        setup = curSetup.copy(teamBPlayers = currentList),
+                        statusMessage = "Assigned ${player.name} to slot ${index + 1}"
+                    )
+                }
+            } else state
         }
     }
 
