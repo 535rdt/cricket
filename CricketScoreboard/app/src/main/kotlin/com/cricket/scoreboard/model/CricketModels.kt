@@ -51,6 +51,12 @@ enum class WicketType(val label: String) {
     RETIRED_OUT("Retired Out")
 }
 
+enum class ChangeBatsmanReason(val label: String, val description: String) {
+    TACTICAL_SUBSTITUTION("Tactical / Substitute", "Direct replacement at crease (no wicket recorded)"),
+    RETIRED_HURT("Retired Hurt", "Player injured or unwell (marked Not Out)"),
+    RETIRED_OUT("Retired Out", "Counts as a wicket (Fall of Wicket added)")
+}
+
 data class Delivery(
     val id: String,
     val overIndex: Int,

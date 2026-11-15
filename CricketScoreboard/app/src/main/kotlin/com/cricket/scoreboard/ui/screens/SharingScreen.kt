@@ -747,6 +747,15 @@ Follow ball-by-ball updates live!
                                         Text("⇄ Strike", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                     }
 
+                                    OutlinedButton(
+                                        onClick = { viewModel.openChangeBatsmanDialog(isStriker = true) },
+                                        modifier = Modifier.weight(1.3f).height(36.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("⇄ Batter", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+
                                     FilledTonalIconButton(
                                         onClick = { viewModel.undoLastDelivery() },
                                         modifier = Modifier.size(36.dp)

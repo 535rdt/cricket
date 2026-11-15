@@ -55,6 +55,8 @@ data class ScoreboardUiState(
     val showOpeningDialog: Boolean = false,
     val showNextBowlerDialog: Boolean = false,
     val showNewBatsmanDialog: Boolean = false,
+    val showChangeBatsmanDialog: Boolean = false,
+    val changeBatsmanIsStriker: Boolean = true,
     val showWicketDialog: Boolean = false,
     val showInningsBreakDialog: Boolean = false,
     val showMatchEndDialog: Boolean = false,
@@ -1010,6 +1012,135 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         saveAndBroadcastMatch(updatedMatch)
     }
 
+    fun openChangeBatsmanDialog(isStriker: Boolean = true) {
+        _uiState.update {
+            it.copy(
+                showChangeBatsmanDialog = true,
+                changeBatsmanIsStriker = isStriker
+            )
+        }
+    }
+
+    fun dismissChangeBatsmanDialog() {
+        _uiState.update { it.copy(showChangeBatsmanDialog = false) }
+    }
+
+    fun openChangeBowlerDialog() {
+        _uiState.update { it.copy(showNextBowlerDialog = true) }
+    }
+
+    fun dismissNextBowlerDialog() {
+        _uiState.update { it.copy(showNextBowlerDialog = false) }
+    }
+
+    fun changeBatsman(isStriker: Boolean, newPlayerId: String, reason: ChangeBatsmanReason) {
+        val currentMatch = _uiState.value.match ?: return
+        val inn = currentMatch.currentInnings
+        val outgoingPlayerId = if (isStriker) currentMatch.currentStrikerId else currentMatch.currentNonStrikerId
+
+        if (outgoingPlayerId == newPlayerId) {
+            _uiState.update { it.copy(showChangeBatsmanDialog = false) }
+            return
+        }
+
+        // Snapshot to undo stack
+        val newUndoStack = _uiState.value.undoStack + currentMatch
+
+        // Resolve incoming player details
+        val incomingPlayer = currentMatch.battingTeam.players.find { it.id == newPlayerId }
+            ?: _uiState.value.savedPlayers.find { it.id == newPlayerId }
+            ?: Player(id = newPlayerId, name = "Batter")
+
+        // Ensure player is registered in the batting team
+        val updatedTeamPlayers = if (currentMatch.battingTeam.players.none { it.id == newPlayerId }) {
+            currentMatch.battingTeam.players + incomingPlayer
+        } else {
+            currentMatch.battingTeam.players
+        }
+        val updatedBattingTeam = currentMatch.battingTeam.copy(players = updatedTeamPlayers)
+
+        // Update batsmen
+        val outgoingBatsman = inn.batsmen.find { it.playerId == outgoingPlayerId }
+        val updatedBatsmen = inn.batsmen.map { b ->
+            if (b.playerId == outgoingPlayerId) {
+                when (reason) {
+                    ChangeBatsmanReason.TACTICAL_SUBSTITUTION -> b.copy(isBatting = false, isOut = false)
+                    ChangeBatsmanReason.RETIRED_HURT -> b.copy(isBatting = false, isOut = false, dismissalText = "retired hurt")
+                    ChangeBatsmanReason.RETIRED_OUT -> b.copy(isBatting = false, isOut = true, dismissalText = "retired out")
+                }
+            } else if (b.playerId == newPlayerId) {
+                b.copy(isBatting = true, isOut = false, dismissalText = "not out")
+            } else {
+                b
+            }
+        }.toMutableList()
+
+        if (updatedBatsmen.none { it.playerId == newPlayerId }) {
+            updatedBatsmen.add(
+                BatsmanScore(
+                    playerId = newPlayerId,
+                    name = incomingPlayer.name,
+                    isBatting = true,
+                    photoUri = incomingPlayer.photoUri
+                )
+            )
+        }
+
+        val isWicket = (reason == ChangeBatsmanReason.RETIRED_OUT)
+        val updatedWickets = if (isWicket) inn.wickets + 1 else inn.wickets
+        val updatedFows = if (isWicket) {
+            inn.fallOfWickets + FallOfWicket(
+                wicketNum = updatedWickets,
+                teamRuns = inn.totalRuns,
+                overText = inn.oversText,
+                batsmanName = outgoingBatsman?.name ?: "Batter"
+            )
+        } else {
+            inn.fallOfWickets
+        }
+
+        val updatedInn = inn.copy(
+            batsmen = updatedBatsmen,
+            wickets = updatedWickets,
+            fallOfWickets = updatedFows
+        )
+
+        val newStrikerId = if (isStriker) newPlayerId else currentMatch.currentStrikerId
+        val newNonStrikerId = if (!isStriker) newPlayerId else currentMatch.currentNonStrikerId
+
+        val isTeamABatting = (currentMatch.teamA.id == updatedBattingTeam.id)
+        val updatedTeamA = if (isTeamABatting) updatedBattingTeam else currentMatch.teamA
+        val updatedTeamB = if (!isTeamABatting) updatedBattingTeam else currentMatch.teamB
+
+        val updatedMatch = if (currentMatch.currentInningsIndex == 1) {
+            currentMatch.copy(
+                teamA = updatedTeamA,
+                teamB = updatedTeamB,
+                innings1 = updatedInn,
+                currentStrikerId = newStrikerId,
+                currentNonStrikerId = newNonStrikerId
+            )
+        } else {
+            currentMatch.copy(
+                teamA = updatedTeamA,
+                teamB = updatedTeamB,
+                innings2 = updatedInn,
+                currentStrikerId = newStrikerId,
+                currentNonStrikerId = newNonStrikerId
+            )
+        }
+
+        _uiState.update {
+            it.copy(
+                match = updatedMatch,
+                undoStack = newUndoStack,
+                showChangeBatsmanDialog = false,
+                statusMessage = "${if (isStriker) "Striker" else "Non-Striker"} replaced: ${outgoingBatsman?.name ?: "Batter"} ➔ ${incomingPlayer.name} (${reason.label})"
+            )
+        }
+        saveAndBroadcastMatch(updatedMatch)
+    }
+
     fun startSecondInnings(strikerId: String, nonStrikerId: String, openingBowlerId: String) {
         val currentMatch = _uiState.value.match ?: return
         val battingTeam = currentMatch.bowlingTeam // Team that bowled 1st bats 2nd
@@ -1070,12 +1201,13 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
 
     fun rotateStrikeManually() {
         val currentMatch = _uiState.value.match ?: return
+        val newUndoStack = _uiState.value.undoStack + currentMatch
         val temp = currentMatch.currentStrikerId
         val updated = currentMatch.copy(
             currentStrikerId = currentMatch.currentNonStrikerId,
             currentNonStrikerId = temp
         )
-        _uiState.update { it.copy(match = updated) }
+        _uiState.update { it.copy(match = updated, undoStack = newUndoStack) }
         saveAndBroadcastMatch(updated)
     }
 
@@ -1090,6 +1222,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 undoStack = newStack,
                 showNextBowlerDialog = false,
                 showNewBatsmanDialog = false,
+                showChangeBatsmanDialog = false,
                 showInningsBreakDialog = false,
                 showMatchEndDialog = false
             )
@@ -1106,7 +1239,8 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 currentScreen = ActiveScreen.SETUP,
                 showMatchEndDialog = false,
                 showInningsBreakDialog = false,
-                showNewGameDialog = false
+                showNewGameDialog = false,
+                showChangeBatsmanDialog = false
             )
         }
     }

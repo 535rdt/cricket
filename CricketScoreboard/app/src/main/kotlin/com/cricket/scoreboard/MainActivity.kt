@@ -243,6 +243,7 @@ class MainActivity : ComponentActivity() {
                                 lastBowlerId = match.lastBowlerId,
                                 innings = match.currentInnings,
                                 maxOversPerBowler = match.maxOversPerBowler,
+                                onDismiss = { viewModel.dismissNextBowlerDialog() },
                                 onConfirm = { newBowlerId -> viewModel.selectNextBowler(newBowlerId) }
                             )
                         }
@@ -252,6 +253,21 @@ class MainActivity : ComponentActivity() {
                                 battingTeam = match.battingTeam,
                                 currentInnings = match.currentInnings,
                                 onConfirm = { newBatsmanId -> viewModel.selectIncomingBatsman(newBatsmanId) }
+                            )
+                        }
+
+                        if (uiState.showChangeBatsmanDialog && match != null) {
+                            ChangeBatsmanDialog(
+                                battingTeam = match.battingTeam,
+                                currentInnings = match.currentInnings,
+                                currentStrikerId = match.currentStrikerId,
+                                currentNonStrikerId = match.currentNonStrikerId,
+                                initialIsStriker = uiState.changeBatsmanIsStriker,
+                                savedPlayers = uiState.savedPlayers,
+                                onConfirm = { isStriker, newPlayerId, reason ->
+                                    viewModel.changeBatsman(isStriker, newPlayerId, reason)
+                                },
+                                onDismiss = { viewModel.dismissChangeBatsmanDialog() }
                             )
                         }
 

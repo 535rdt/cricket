@@ -337,14 +337,26 @@ fun LiveScoreboardScreen(
                     )
 
                     if (!uiState.isSpectatorMode) {
-                        OutlinedButton(
-                            onClick = { viewModel.rotateStrikeManually() },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(30.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Swap Strike", fontSize = 11.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(
+                                onClick = { viewModel.openChangeBatsmanDialog(isStriker = true) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Change", fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.rotateStrikeManually() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Swap Strike", fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -369,7 +381,12 @@ fun LiveScoreboardScreen(
                 // Striker Row
                 striker?.let { s ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !uiState.isSpectatorMode) {
+                                viewModel.openChangeBatsmanDialog(isStriker = true)
+                            }
+                            .padding(vertical = 2.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -404,7 +421,12 @@ fun LiveScoreboardScreen(
                 // Non-Striker Row
                 nonStriker?.let { ns ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !uiState.isSpectatorMode) {
+                                viewModel.openChangeBatsmanDialog(isStriker = false)
+                            }
+                            .padding(vertical = 2.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -454,7 +476,7 @@ fun LiveScoreboardScreen(
 
                     if (!uiState.isSpectatorMode) {
                         OutlinedButton(
-                            onClick = { viewModel.promptStartMatch() },
+                            onClick = { viewModel.openChangeBowlerDialog() },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                             modifier = Modifier.height(30.dp)
                         ) {

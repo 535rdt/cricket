@@ -1,5 +1,6 @@
 package com.cricket.scoreboard.ui.dialogs
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -195,6 +196,7 @@ fun NextBowlerDialog(
     lastBowlerId: String?,
     innings: Innings? = null,
     maxOversPerBowler: Int = 0,
+    onDismiss: (() -> Unit)? = null,
     onConfirm: (newBowlerId: String) -> Unit
 ) {
     var selectedBowlerId by remember {
@@ -207,7 +209,7 @@ fun NextBowlerDialog(
         mutableStateOf(eligible?.id ?: bowlingTeam.players.firstOrNull()?.id ?: "")
     }
 
-    Dialog(onDismissRequest = { /* Must select next bowler */ }) {
+    Dialog(onDismissRequest = { onDismiss?.invoke() }) {
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -221,14 +223,17 @@ fun NextBowlerDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    text = "🎯 Over Completed!",
+                    text = if (onDismiss != null) "⚾ Change Bowler" else "🎯 Over Completed!",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Select the bowler for the next over. (Consecutive overs by the same bowler are not allowed in cricket)",
+                    text = if (onDismiss != null)
+                        "Select a bowler to take over. (Consecutive overs by the same bowler are not allowed)"
+                    else
+                        "Select the bowler for the next over. (Consecutive overs by the same bowler are not allowed in cricket)",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -282,16 +287,43 @@ fun NextBowlerDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                Button(
-                    onClick = {
-                        if (selectedBowlerId.isNotEmpty()) {
-                            onConfirm(selectedBowlerId)
+                if (onDismiss != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Cancel")
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium)
-                ) {
-                    Text("Start Over", color = Color.White, fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = {
+                                if (selectedBowlerId.isNotEmpty()) {
+                                    onConfirm(selectedBowlerId)
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = selectedBowlerId.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium)
+                        ) {
+                            Text("Confirm", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            if (selectedBowlerId.isNotEmpty()) {
+                                onConfirm(selectedBowlerId)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedBowlerId.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium)
+                    ) {
+                        Text("Start Over", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -384,6 +416,321 @@ fun NewBatsmanDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium)
                 ) {
                     Text("Send Batsman to Crease", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ChangeBatsmanDialog(
+    battingTeam: Team,
+    currentInnings: Innings,
+    currentStrikerId: String,
+    currentNonStrikerId: String,
+    initialIsStriker: Boolean = true,
+    savedPlayers: List<Player> = emptyList(),
+    onConfirm: (isStriker: Boolean, newPlayerId: String, reason: ChangeBatsmanReason) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var isStriker by remember { mutableStateOf(initialIsStriker) }
+    var selectedReason by remember { mutableStateOf(ChangeBatsmanReason.TACTICAL_SUBSTITUTION) }
+    var showPoolPlayers by remember { mutableStateOf(false) }
+
+    val currentStriker = battingTeam.players.find { it.id == currentStrikerId }
+        ?: currentInnings.batsmen.find { it.playerId == currentStrikerId }?.let { Player(it.playerId, it.name) }
+    val currentNonStriker = battingTeam.players.find { it.id == currentNonStrikerId }
+        ?: currentInnings.batsmen.find { it.playerId == currentNonStrikerId }?.let { Player(it.playerId, it.name) }
+
+    // Eligible players from the batting team (exclude the current striker & non-striker, and exclude players who were dismissed out, unless they retired hurt)
+    val availableTeamPlayers = battingTeam.players.filter { player ->
+        if (player.id == currentStrikerId || player.id == currentNonStrikerId) return@filter false
+        val score = currentInnings.batsmen.find { it.playerId == player.id }
+        score == null || (!score.isBatting && !score.isOut)
+    }
+
+    // Players from individual player pool not already in team or currently batting
+    val availablePoolPlayers = savedPlayers.filter { poolPlayer ->
+        battingTeam.players.none { it.id == poolPlayer.id } &&
+        currentInnings.batsmen.none { it.playerId == poolPlayer.id }
+    }
+
+    var selectedPlayerId by remember {
+        mutableStateOf(availableTeamPlayers.firstOrNull()?.id ?: availablePoolPlayers.firstOrNull()?.id ?: "")
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // Header
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.SwapHoriz,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Change Batter",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Substitute or retire an active batter at the crease.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Section 1: Select which batter to replace (Striker vs Non-Striker)
+                Text(
+                    text = "1. Batter to Replace",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = isStriker,
+                        onClick = { isStriker = true },
+                        label = {
+                            Text(
+                                text = "🏏 ${currentStriker?.name ?: "Striker"} (Striker)",
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = !isStriker,
+                        onClick = { isStriker = false },
+                        label = {
+                            Text(
+                                text = "${currentNonStriker?.name ?: "Non-Striker"} (Non-Str)",
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Section 2: Reason for change
+                Text(
+                    text = "2. Reason for Change",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                ChangeBatsmanReason.values().forEach { reason ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .clickable { selectedReason = reason },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selectedReason == reason)
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                            else
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        ),
+                        border = if (selectedReason == reason)
+                            BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                        else null
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedReason == reason,
+                                onClick = { selectedReason = reason }
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = reason.label,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (reason == ChangeBatsmanReason.RETIRED_OUT) WicketRed else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = reason.description,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Section 3: Select incoming batter
+                Text(
+                    text = "3. Incoming Batter",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (availableTeamPlayers.isEmpty() && availablePoolPlayers.isEmpty()) {
+                    Text(
+                        text = "No bench or pool players available.",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                } else {
+                    availableTeamPlayers.forEach { player ->
+                        val bScore = currentInnings.batsmen.find { it.playerId == player.id }
+                        val isResumeHurt = bScore?.dismissalText?.contains("retired hurt", ignoreCase = true) == true
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedPlayerId = player.id }
+                                .padding(vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedPlayerId == player.id,
+                                onClick = { selectedPlayerId = player.id }
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            PlayerAvatar(photoUri = player.photoUri, name = player.name, size = 28.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = player.name,
+                                    fontWeight = if (selectedPlayerId == player.id) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 13.sp
+                                )
+                                if (isResumeHurt && bScore != null) {
+                                    Text(
+                                        text = "↩ Resuming innings (${bScore.runs} runs off ${bScore.balls}b)",
+                                        fontSize = 10.sp,
+                                        color = TurfGreenMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Optional player pool expansion
+                    if (availablePoolPlayers.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = { showPoolPlayers = !showPoolPlayers },
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 4.dp, horizontal = 8.dp)
+                        ) {
+                            Icon(
+                                if (showPoolPlayers) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (showPoolPlayers) "Hide Player Pool" else "Or Pick From Player Pool (${availablePoolPlayers.size})",
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        if (showPoolPlayers) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            availablePoolPlayers.forEach { poolPlayer ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedPlayerId = poolPlayer.id }
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selectedPlayerId == poolPlayer.id,
+                                        onClick = { selectedPlayerId = poolPlayer.id }
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    PlayerAvatar(photoUri = poolPlayer.photoUri, name = poolPlayer.name, size = 26.dp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = poolPlayer.name,
+                                            fontWeight = if (selectedPlayerId == poolPlayer.id) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = "Pool Player • ${poolPlayer.role.label}",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancel")
+                    }
+
+                    Button(
+                        onClick = {
+                            if (selectedPlayerId.isNotEmpty()) {
+                                onConfirm(isStriker, selectedPlayerId, selectedReason)
+                            }
+                        },
+                        enabled = selectedPlayerId.isNotEmpty(),
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium)
+                    ) {
+                        Text("Confirm", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
