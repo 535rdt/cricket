@@ -190,6 +190,7 @@ fun PlayerPoolPickerDialog(
     savedPlayers: List<Player>,
     alreadySelectedPlayerNames: Set<String> = emptySet(),
     isMultiSelect: Boolean = true,
+    maxSelectable: Int? = null,
     onPlayersSelected: (List<Player>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -297,18 +298,20 @@ fun PlayerPoolPickerDialog(
                     ) {
                         OutlinedButton(
                             onClick = {
-                                val toAdd = filteredPlayers.filterNot { alreadySelectedPlayerNames.contains(it.name) }.take(11)
+                                val remaining = if (maxSelectable != null) (maxSelectable - alreadySelectedPlayerNames.size - chosenPlayerIds.size).coerceAtLeast(0) else 11
+                                val toAdd = filteredPlayers.filterNot { alreadySelectedPlayerNames.contains(it.name) || chosenPlayerIds.contains(it.id) }.take(if (maxSelectable != null) remaining else 11)
                                 toAdd.forEach { if (!chosenPlayerIds.contains(it.id)) chosenPlayerIds.add(it.id) }
                             },
                             modifier = Modifier.weight(1f).height(32.dp),
                             contentPadding = PaddingValues(0.dp)
                         ) {
-                            Text("⚡ Pick 11", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(if (maxSelectable != null) "⚡ Fill to $maxSelectable" else "⚡ Pick 11", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
                             onClick = {
-                                val toAdd = filteredPlayers.filterNot { alreadySelectedPlayerNames.contains(it.name) }
+                                val remaining = if (maxSelectable != null) (maxSelectable - alreadySelectedPlayerNames.size - chosenPlayerIds.size).coerceAtLeast(0) else Int.MAX_VALUE
+                                val toAdd = filteredPlayers.filterNot { alreadySelectedPlayerNames.contains(it.name) || chosenPlayerIds.contains(it.id) }.take(remaining)
                                 toAdd.forEach { if (!chosenPlayerIds.contains(it.id)) chosenPlayerIds.add(it.id) }
                             },
                             modifier = Modifier.weight(1f).height(32.dp),
@@ -376,8 +379,14 @@ fun PlayerPoolPickerDialog(
                                         if (!isMultiSelect) {
                                             onPlayersSelected(listOf(player))
                                         } else {
-                                            if (isChosen) chosenPlayerIds.remove(player.id)
-                                            else chosenPlayerIds.add(player.id)
+                                            if (isChosen) {
+                                                chosenPlayerIds.remove(player.id)
+                                            } else {
+                                                val total = alreadySelectedPlayerNames.size + chosenPlayerIds.size
+                                                if (maxSelectable == null || total < maxSelectable) {
+                                                    chosenPlayerIds.add(player.id)
+                                                }
+                                            }
                                         }
                                     }
                             ) {
@@ -420,8 +429,14 @@ fun PlayerPoolPickerDialog(
                                         Checkbox(
                                             checked = isChosen,
                                             onCheckedChange = { checked ->
-                                                if (checked) chosenPlayerIds.add(player.id)
-                                                else chosenPlayerIds.remove(player.id)
+                                                if (checked) {
+                                                    val total = alreadySelectedPlayerNames.size + chosenPlayerIds.size
+                                                    if (maxSelectable == null || total < maxSelectable) {
+                                                        chosenPlayerIds.add(player.id)
+                                                    }
+                                                } else {
+                                                    chosenPlayerIds.remove(player.id)
+                                                }
                                             }
                                         )
                                     } else {
@@ -448,7 +463,7 @@ fun PlayerPoolPickerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "${chosenPlayerIds.size} selected",
+                            text = if (maxSelectable != null) "${chosenPlayerIds.size} selected (Max: $maxSelectable)" else "${chosenPlayerIds.size} selected",
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
                             color = TurfGreenMedium

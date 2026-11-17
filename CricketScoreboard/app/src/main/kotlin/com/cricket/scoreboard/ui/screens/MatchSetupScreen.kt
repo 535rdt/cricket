@@ -1243,6 +1243,8 @@ fun MatchSetupScreen(
                 } else {
                     items(filteredPool, key = { "pool_${it.id}" }) { poolPlayer ->
                         val inSquad = players.any { it.name.trim().equals(poolPlayer.name.trim(), ignoreCase = true) }
+                        val hasPlaceholder = players.any { it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null }
+                        val isSquadFull = !inSquad && players.size >= setup.playersPerSide && !hasPlaceholder
 
                         Card(
                             shape = RoundedCornerShape(10.dp),
@@ -1319,6 +1321,20 @@ fun MatchSetupScreen(
                                         ) {
                                             Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                         }
+                                    }
+                                } else if (isSquadFull) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                    ) {
+                                        Text(
+                                            text = "Full (${setup.playersPerSide})",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                        )
                                     }
                                 } else {
                                     Button(
@@ -1454,8 +1470,9 @@ fun MatchSetupScreen(
         }
         PlayerPoolPickerDialog(
             savedPlayers = availablePool,
-            alreadySelectedPlayerNames = currentSquad.map { it.name }.toSet(),
+            alreadySelectedPlayerNames = currentSquad.filterNot { it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null }.map { it.name }.toSet(),
             isMultiSelect = true,
+            maxSelectable = setup.playersPerSide,
             onPlayersSelected = { selectedList ->
                 selectedList.forEach { sel ->
                     val squad = if (isTeamA) viewModel.uiState.value.setup.teamAPlayers else viewModel.uiState.value.setup.teamBPlayers

@@ -1370,6 +1370,7 @@ fun TeamEditorDialog(
                         ) {
                             items(filteredPool, key = { it.id }) { poolPlayer ->
                                 val inSquad = players.any { it.name.trim().equals(poolPlayer.name.trim(), ignoreCase = true) }
+                                val isSquadFull = !inSquad && players.size >= targetSquadSize
 
                                 Card(
                                     shape = RoundedCornerShape(10.dp),
@@ -1388,7 +1389,7 @@ fun TeamEditorDialog(
                                         .clickable {
                                             if (inSquad) {
                                                 players = players.filterNot { it.name.trim().equals(poolPlayer.name.trim(), ignoreCase = true) }
-                                            } else {
+                                            } else if (!isSquadFull) {
                                                 players = players + poolPlayer.copy(id = UUID.randomUUID().toString())
                                             }
                                         }
@@ -1452,10 +1453,26 @@ fun TeamEditorDialog(
                                                     Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                                 }
                                             }
+                                        } else if (isSquadFull) {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                            ) {
+                                                Text(
+                                                    text = "Full ($targetSquadSize)",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                                )
+                                            }
                                         } else {
                                             Button(
                                                 onClick = {
-                                                    players = players + poolPlayer.copy(id = UUID.randomUUID().toString())
+                                                    if (players.size < targetSquadSize) {
+                                                        players = players + poolPlayer.copy(id = UUID.randomUUID().toString())
+                                                    }
                                                 },
                                                 colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium),
                                                 shape = RoundedCornerShape(8.dp),
