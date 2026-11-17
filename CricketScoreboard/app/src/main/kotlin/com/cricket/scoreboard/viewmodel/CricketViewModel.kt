@@ -1435,6 +1435,84 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun removePlayerFromSetup(isTeamA: Boolean, playerId: String) {
+        _uiState.update { state ->
+            val curSetup = state.setup
+            val currentList = if (isTeamA) curSetup.teamAPlayers else curSetup.teamBPlayers
+            val updated = currentList.filter { it.id != playerId }
+            if (isTeamA) {
+                state.copy(setup = curSetup.copy(teamAPlayers = updated), statusMessage = "Player removed")
+            } else {
+                state.copy(setup = curSetup.copy(teamBPlayers = updated), statusMessage = "Player removed")
+            }
+        }
+    }
+
+    fun togglePlayerInSetup(isTeamA: Boolean, player: Player) {
+        _uiState.update { state ->
+            val curSetup = state.setup
+            val currentList = (if (isTeamA) curSetup.teamAPlayers else curSetup.teamBPlayers).toMutableList()
+            val existingIndex = currentList.indexOfFirst { it.name.trim().equals(player.name.trim(), ignoreCase = true) }
+            if (existingIndex >= 0) {
+                currentList.removeAt(existingIndex)
+                if (isTeamA) state.copy(setup = curSetup.copy(teamAPlayers = currentList), statusMessage = "Removed ${player.name}")
+                else state.copy(setup = curSetup.copy(teamBPlayers = currentList), statusMessage = "Removed ${player.name}")
+            } else {
+                val placeholderIdx = currentList.indexOfFirst {
+                    it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null
+                }
+                val cloned = player.copy(id = UUID.randomUUID().toString())
+                if (placeholderIdx != -1) {
+                    currentList[placeholderIdx] = cloned.copy(
+                        isCaptain = currentList[placeholderIdx].isCaptain,
+                        isWicketKeeper = currentList[placeholderIdx].isWicketKeeper || player.isWicketKeeper
+                    )
+                } else {
+                    currentList.add(cloned)
+                }
+                val newCount = maxOf(curSetup.playersPerSide, currentList.size)
+                if (isTeamA) state.copy(setup = curSetup.copy(teamAPlayers = currentList, playersPerSide = newCount), statusMessage = "Added ${player.name} to Team 1")
+                else state.copy(setup = curSetup.copy(teamBPlayers = currentList, playersPerSide = newCount), statusMessage = "Added ${player.name} to Team 2")
+            }
+        }
+    }
+
+    fun fillRemainingSetupFromPool(isTeamA: Boolean) {
+        _uiState.update { state ->
+            val curSetup = state.setup
+            val currentList = (if (isTeamA) curSetup.teamAPlayers else curSetup.teamBPlayers).toMutableList()
+            val pool = state.savedPlayers
+            val target = curSetup.playersPerSide
+
+            val cleanList = currentList.filterNot {
+                it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null
+            }.toMutableList()
+
+            for (p in pool) {
+                if (cleanList.size >= target) break
+                if (!cleanList.any { it.name.trim().equals(p.name.trim(), ignoreCase = true) }) {
+                    cleanList.add(p.copy(id = UUID.randomUUID().toString()))
+                }
+            }
+
+            while (cleanList.size < target) {
+                val nextNum = cleanList.size + 1
+                cleanList.add(Player(id = UUID.randomUUID().toString(), name = "Player $nextNum", role = PlayerRole.ALL_ROUNDER))
+            }
+
+            if (isTeamA) state.copy(setup = curSetup.copy(teamAPlayers = cleanList), statusMessage = "Filled Team 1 squad from pool!")
+            else state.copy(setup = curSetup.copy(teamBPlayers = cleanList), statusMessage = "Filled Team 2 squad from pool!")
+        }
+    }
+
+    fun clearSetupSquad(isTeamA: Boolean) {
+        _uiState.update { state ->
+            val curSetup = state.setup
+            if (isTeamA) state.copy(setup = curSetup.copy(teamAPlayers = emptyList()), statusMessage = "Cleared Team 1 squad")
+            else state.copy(setup = curSetup.copy(teamBPlayers = emptyList()), statusMessage = "Cleared Team 2 squad")
+        }
+    }
+
     fun loadTeamIntoSetup(team: Team, isTeamA: Boolean) {
         val clonedPlayers = team.players.map { it.copy(id = UUID.randomUUID().toString()) }
         _uiState.update { state ->

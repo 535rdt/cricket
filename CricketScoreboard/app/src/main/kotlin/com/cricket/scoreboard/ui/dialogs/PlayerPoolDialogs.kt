@@ -289,6 +289,46 @@ fun PlayerPoolPickerDialog(
                     }
                 }
 
+                if (isMultiSelect && filteredPlayers.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                val toAdd = filteredPlayers.filterNot { alreadySelectedPlayerNames.contains(it.name) }.take(11)
+                                toAdd.forEach { if (!chosenPlayerIds.contains(it.id)) chosenPlayerIds.add(it.id) }
+                            },
+                            modifier = Modifier.weight(1f).height(32.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("⚡ Pick 11", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val toAdd = filteredPlayers.filterNot { alreadySelectedPlayerNames.contains(it.name) }
+                                toAdd.forEach { if (!chosenPlayerIds.contains(it.id)) chosenPlayerIds.add(it.id) }
+                            },
+                            modifier = Modifier.weight(1f).height(32.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("Select All", fontSize = 11.sp)
+                        }
+
+                        if (chosenPlayerIds.isNotEmpty()) {
+                            OutlinedButton(
+                                onClick = { chosenPlayerIds.clear() },
+                                modifier = Modifier.weight(0.7f).height(32.dp),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("Clear", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(10.dp))
 
                 if (filteredPlayers.isEmpty()) {

@@ -889,23 +889,12 @@ fun TeamsScreen(
             initialTeam = Team(
                 id = UUID.randomUUID().toString(),
                 name = "New Team",
-                players = (1..11).map { i ->
-                    Player(
-                        id = UUID.randomUUID().toString(),
-                        name = "Player $i",
-                        role = when (i) {
-                            1, 2, 3, 4 -> PlayerRole.BATSMAN
-                            5 -> PlayerRole.WICKET_KEEPER
-                            6, 7 -> PlayerRole.ALL_ROUNDER
-                            else -> PlayerRole.BOWLER
-                        },
-                        isCaptain = i == 1,
-                        isWicketKeeper = i == 5
-                    )
-                }
+                players = emptyList() // Start empty so user can easily tap to pick players from pool!
             ),
             isNewTeam = true,
             savedPlayers = savedPlayers,
+            onSaveNewPlayer = { viewModel.saveIndividualPlayer(it) },
+            onImportPlayersFromTeams = { viewModel.importPlayersFromTeams() },
             onSave = { newTeam ->
                 viewModel.updateOrSaveTeam(newTeam)
                 showCreateDialog = false
@@ -920,6 +909,8 @@ fun TeamsScreen(
             initialTeam = teamToEdit,
             isNewTeam = false,
             savedPlayers = savedPlayers,
+            onSaveNewPlayer = { viewModel.saveIndividualPlayer(it) },
+            onImportPlayersFromTeams = { viewModel.importPlayersFromTeams() },
             onSave = { updatedTeam ->
                 viewModel.updateOrSaveTeam(updatedTeam)
                 editingTeam = null
@@ -969,14 +960,21 @@ fun TeamEditorDialog(
     initialTeam: Team,
     isNewTeam: Boolean,
     savedPlayers: List<Player> = emptyList(),
+    onSaveNewPlayer: ((Player) -> Unit)? = null,
+    onImportPlayersFromTeams: (() -> Unit)? = null,
     onSave: (Team) -> Unit,
     onDismiss: () -> Unit
 ) {
     var teamName by remember { mutableStateOf(initialTeam.name) }
     var players by remember { mutableStateOf(initialTeam.players) }
+    var targetSquadSize by remember {
+        mutableStateOf(if (initialTeam.players.isNotEmpty()) initialTeam.players.size else 11)
+    }
 
-    var showPoolMultiPicker by remember { mutableStateOf(false) }
-    var pickingSlotIndex by remember { mutableStateOf<Int?>(null) }
+    var editorMode by remember { mutableStateOf(if (savedPlayers.isNotEmpty()) 0 else 1) }
+    var poolSearchQuery by remember { mutableStateOf("") }
+    var poolRoleFilter by remember { mutableStateOf<PlayerRole?>(null) }
+    var showNewPlayerDialog by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -984,13 +982,13 @@ fun TeamEditorDialog(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.92f)
+                .fillMaxHeight(0.94f)
                 .padding(4.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(14.dp)
             ) {
                 // Header
                 Row(
@@ -1009,244 +1007,617 @@ fun TeamEditorDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // Team Name Input
                 OutlinedTextField(
                     value = teamName,
                     onValueChange = { teamName = it },
                     label = { Text("Team Name") },
+                    placeholder = { Text("e.g. Mumbai Kings, Royal Challengers") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Squad Size and Action Bar: "Add from Player Pool" button + squad stepper
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // Mode Tabs: [⚡ Pick from Pool] vs [✍️ Manual List]
+                TabRow(
+                    selectedTabIndex = editorMode,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = "Squad: ${players.size} Players",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    )
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (savedPlayers.isNotEmpty()) {
-                            Button(
-                                onClick = { showPoolMultiPicker = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = PitchGold),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.height(34.dp)
-                            ) {
-                                Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color.Black, modifier = Modifier.size(15.dp))
+                    Tab(
+                        selected = editorMode == 0,
+                        onClick = { editorMode = 0 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(16.dp), tint = PitchGold)
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Pick from Pool", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("⚡ Tap to Pick (${players.size}/$targetSquadSize)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
-
-                        FilledTonalIconButton(
-                            onClick = {
-                                if (players.size > 2) {
-                                    players = players.dropLast(1)
-                                }
-                            },
-                            enabled = players.size > 2,
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Text("—", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        FilledTonalIconButton(
-                            onClick = {
-                                if (players.size < 30) {
-                                    val nextNum = players.size + 1
-                                    players = players + Player(
-                                        id = UUID.randomUUID().toString(),
-                                        name = "Player $nextNum",
-                                        role = PlayerRole.ALL_ROUNDER
-                                    )
-                                }
-                            },
-                            enabled = players.size < 30,
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add player", modifier = Modifier.size(18.dp))
-                        }
-                    }
-                }
-
-                // Horizontal Quick-Add Chips for available Pool Players (1-tap to add into squad!)
-                if (savedPlayers.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "⚡ Quick-Add Player (Tap to add to squad):",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TurfGreenMedium
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp)
-                    ) {
-                        items(savedPlayers) { sp ->
-                            val inSquad = players.any { it.name.trim().equals(sp.name.trim(), ignoreCase = true) }
-                            FilterChip(
-                                selected = inSquad,
-                                onClick = {
-                                    if (!inSquad) {
-                                        val mutable = players.toMutableList()
-                                        // Replace placeholder "Player X" if present
-                                        val placeholderIdx = mutable.indexOfFirst {
-                                            it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null
-                                        }
-                                        if (placeholderIdx != -1) {
-                                            mutable[placeholderIdx] = sp.copy(
-                                                id = UUID.randomUUID().toString(),
-                                                isCaptain = mutable[placeholderIdx].isCaptain,
-                                                isWicketKeeper = mutable[placeholderIdx].isWicketKeeper || sp.isWicketKeeper
-                                            )
-                                        } else {
-                                            mutable.add(sp.copy(id = UUID.randomUUID().toString()))
-                                        }
-                                        players = mutable
-                                    }
-                                },
-                                leadingIcon = {
-                                    PlayerAvatar(photoUri = sp.photoUri, name = sp.name, size = 18.dp)
-                                },
-                                label = {
-                                    Text(
-                                        if (inSquad) "✓ ${sp.name}" else "+ ${sp.name}",
-                                        fontSize = 11.sp,
-                                        fontWeight = if (inSquad) FontWeight.Normal else FontWeight.Bold
-                                    )
-                                }
-                            )
+                    Tab(
+                        selected = editorMode == 1,
+                        onClick = { editorMode = 1 },
+                        text = {
+                            Text("✍️ Manual (${players.size})", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
-                    }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Editable Players List
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(players.size) { index ->
-                        val player = players[index]
+                if (editorMode == 0) {
+                    // ========================================================
+                    // MODE 0: ⚡ 1-Tap Pick from Player Pool
+                    // ========================================================
 
-                        Card(
-                            shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-                            modifier = Modifier.fillMaxWidth()
+                    // Action Controls: Target Squad Size + Auto-Fill + Clear + New Player
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Target Squad Size Stepper
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "${index + 1}.",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        modifier = Modifier.width(24.dp)
-                                    )
+                            Text(
+                                text = "Target: $targetSquadSize",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FilledTonalIconButton(
+                                onClick = { if (targetSquadSize > 2) targetSquadSize-- },
+                                enabled = targetSquadSize > 2,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Text("—", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            }
+                            FilledTonalIconButton(
+                                onClick = { if (targetSquadSize < 30) targetSquadSize++ },
+                                enabled = targetSquadSize < 30,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                            }
+                        }
 
-                                    PlayerAvatar(
-                                        photoUri = player.photoUri,
-                                        name = player.name,
-                                        size = 36.dp,
-                                        isEditable = true,
-                                        playerId = player.id,
-                                        onPhotoChanged = { path ->
-                                            val updated = players.toMutableList()
-                                            updated[index] = player.copy(photoUri = path)
-                                            players = updated
+                        // Action Buttons: Auto-Fill, Clear, Add Player
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (savedPlayers.isNotEmpty()) {
+                                Button(
+                                    onClick = {
+                                        val currentList = players.toMutableList()
+                                        for (sp in savedPlayers) {
+                                            if (currentList.size >= targetSquadSize) break
+                                            if (!currentList.any { it.name.trim().equals(sp.name.trim(), ignoreCase = true) }) {
+                                                currentList.add(sp.copy(id = UUID.randomUUID().toString()))
+                                            }
                                         }
-                                    )
+                                        players = currentList
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PitchGold),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Icon(Icons.Default.FlashOn, contentDescription = null, tint = Color.Black, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("⚡ Auto-Fill $targetSquadSize", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
 
-                                    Spacer(modifier = Modifier.width(8.dp))
+                            if (players.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = { players = emptyList() },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.error)
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("Clear", fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
 
-                                    OutlinedTextField(
-                                        value = player.name,
-                                        onValueChange = { newName ->
-                                            val updated = players.toMutableList()
-                                            updated[index] = player.copy(name = newName)
-                                            players = updated
-                                        },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f),
-                                        textStyle = MaterialTheme.typography.bodyMedium
-                                    )
+                            FilledTonalButton(
+                                onClick = { showNewPlayerDialog = true },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("+ Player", fontSize = 10.sp)
+                            }
+                        }
+                    }
 
-                                    // Pick from Pool button for this specific slot
-                                    if (savedPlayers.isNotEmpty()) {
-                                        IconButton(
-                                            onClick = { pickingSlotIndex = index },
-                                            modifier = Modifier.size(34.dp)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Selected Squad Shelf (Horizontal scrollable cards showing who has been picked)
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Selected Squad (${players.size}/$targetSquadSize):",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (players.size >= targetSquadSize) TurfGreenMedium else MaterialTheme.colorScheme.primary
+                                )
+                                if (players.size >= targetSquadSize) {
+                                    Text("✓ Ready", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TurfGreenMedium)
+                                }
+                            }
+
+                            if (players.isEmpty()) {
+                                Text(
+                                    text = "No players selected yet. Tap players from the list below to add them directly!",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    contentPadding = PaddingValues(vertical = 2.dp)
+                                ) {
+                                    itemsIndexed(players) { index, player ->
+                                        Card(
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                            border = BorderStroke(1.dp, TurfGreenMedium.copy(alpha = 0.5f)),
+                                            modifier = Modifier.width(115.dp)
                                         ) {
-                                            Icon(
-                                                Icons.Default.PersonSearch,
-                                                contentDescription = "Pick player from pool",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(18.dp)
-                                            )
+                                            Column(
+                                                modifier = Modifier.padding(6.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "#${index + 1}",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    IconButton(
+                                                        onClick = {
+                                                            players = players.filterIndexed { i, _ -> i != index }
+                                                        },
+                                                        modifier = Modifier.size(18.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(13.dp))
+                                                    }
+                                                }
+
+                                                PlayerAvatar(photoUri = player.photoUri, name = player.name, size = 32.dp)
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = player.name,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = player.role.label,
+                                                    fontSize = 9.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    // Captain Chip
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = if (player.isCaptain) TurfGreenMedium else MaterialTheme.colorScheme.surfaceVariant,
+                                                        modifier = Modifier.clickable {
+                                                            players = players.mapIndexed { i, p ->
+                                                                p.copy(isCaptain = (i == index && !player.isCaptain))
+                                                            }
+                                                        }
+                                                    ) {
+                                                        Text(
+                                                            text = "C",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (player.isCaptain) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                    // Keeper Chip
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = if (player.isWicketKeeper) PitchGold else MaterialTheme.colorScheme.surfaceVariant,
+                                                        modifier = Modifier.clickable {
+                                                            players = players.mapIndexed { i, p ->
+                                                                p.copy(isWicketKeeper = (i == index && !player.isWicketKeeper))
+                                                            }
+                                                        }
+                                                    ) {
+                                                        Text(
+                                                            text = "WK",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (player.isWicketKeeper) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
-
-                                    Spacer(modifier = Modifier.width(4.dp))
-
-                                    // Captain Chip
-                                    FilterChip(
-                                        selected = player.isCaptain,
-                                        onClick = {
-                                            players = players.mapIndexed { i, p ->
-                                                p.copy(isCaptain = (i == index && !player.isCaptain))
-                                            }
-                                        },
-                                        label = { Text("C", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
-                                    )
-
-                                    Spacer(modifier = Modifier.width(4.dp))
-
-                                    // Keeper Chip
-                                    FilterChip(
-                                        selected = player.isWicketKeeper,
-                                        onClick = {
-                                            players = players.mapIndexed { i, p ->
-                                                p.copy(isWicketKeeper = (i == index && !player.isWicketKeeper))
-                                            }
-                                        },
-                                        label = { Text("WK", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
-                                    )
                                 }
+                            }
+                        }
+                    }
 
-                                // Role selection row
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Search & Role Filter for the Pool
+                    OutlinedTextField(
+                        value = poolSearchQuery,
+                        onValueChange = { poolSearchQuery = it },
+                        placeholder = { Text("Search pool player by name...", fontSize = 12.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Filter Chips (All, Batsman, Bowler, etc.)
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp)
+                    ) {
+                        item {
+                            FilterChip(
+                                selected = poolRoleFilter == null,
+                                onClick = { poolRoleFilter = null },
+                                label = { Text("All (${savedPlayers.size})", fontSize = 11.sp) }
+                            )
+                        }
+                        PlayerRole.values().forEach { role ->
+                            val count = savedPlayers.count { it.role == role }
+                            item {
+                                FilterChip(
+                                    selected = poolRoleFilter == role,
+                                    onClick = { poolRoleFilter = if (poolRoleFilter == role) null else role },
+                                    label = { Text("${role.label} ($count)", fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Available Players List
+                    val filteredPool = remember(savedPlayers, poolSearchQuery, poolRoleFilter) {
+                        savedPlayers.filter { p ->
+                            (poolSearchQuery.isBlank() || p.name.contains(poolSearchQuery, ignoreCase = true)) &&
+                            (poolRoleFilter == null || p.role == poolRoleFilter)
+                        }
+                    }
+
+                    if (savedPlayers.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Your player pool is currently empty.",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (onImportPlayersFromTeams != null) {
+                                    Button(
+                                        onClick = { onImportPlayersFromTeams() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium)
+                                    ) {
+                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("📥 Auto-Import from Existing Teams")
+                                    }
+                                }
+                                OutlinedButton(onClick = { showNewPlayerDialog = true }) {
+                                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("➕ Add Individual Player")
+                                }
+                            }
+                        }
+                    } else if (filteredPool.isEmpty()) {
+                        Box(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No players matching \"$poolSearchQuery\"", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(filteredPool, key = { it.id }) { poolPlayer ->
+                                val inSquad = players.any { it.name.trim().equals(poolPlayer.name.trim(), ignoreCase = true) }
+
+                                Card(
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (inSquad)
+                                            TurfGreenMedium.copy(alpha = 0.12f)
+                                        else
+                                            MaterialTheme.colorScheme.surface
+                                    ),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (inSquad) TurfGreenMedium else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            if (inSquad) {
+                                                players = players.filterNot { it.name.trim().equals(poolPlayer.name.trim(), ignoreCase = true) }
+                                            } else {
+                                                players = players + poolPlayer.copy(id = UUID.randomUUID().toString())
+                                            }
+                                        }
                                 ) {
-                                    listOf(PlayerRole.BATSMAN, PlayerRole.BOWLER, PlayerRole.ALL_ROUNDER, PlayerRole.WICKET_KEEPER).forEach { r ->
-                                        FilterChip(
-                                            selected = player.role == r,
-                                            onClick = {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        PlayerAvatar(photoUri = poolPlayer.photoUri, name = poolPlayer.name, size = 38.dp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = poolPlayer.name,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp
+                                                )
+                                                if (poolPlayer.isCaptain) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("(C)", fontSize = 11.sp, color = TurfGreenMedium, fontWeight = FontWeight.Bold)
+                                                }
+                                                if (poolPlayer.isWicketKeeper) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("(WK)", fontSize = 11.sp, color = PitchGold, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            Text(
+                                                text = poolPlayer.role.label,
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        // Status action indicator
+                                        if (inSquad) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    color = TurfGreenMedium.copy(alpha = 0.2f)
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Check, contentDescription = null, tint = TurfGreenMedium, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("In Squad", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TurfGreenMedium)
+                                                    }
+                                                }
+                                                IconButton(
+                                                    onClick = {
+                                                        players = players.filterNot { it.name.trim().equals(poolPlayer.name.trim(), ignoreCase = true) }
+                                                    },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                                }
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = {
+                                                    players = players + poolPlayer.copy(id = UUID.randomUUID().toString())
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(30.dp)
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                Text("Add", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // ========================================================
+                    // MODE 1: ✍️ Manual List
+                    // ========================================================
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Squad: ${players.size} Players",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilledTonalIconButton(
+                                onClick = {
+                                    if (players.size > 2) {
+                                        players = players.dropLast(1)
+                                    }
+                                },
+                                enabled = players.size > 2,
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Text("—", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            FilledTonalIconButton(
+                                onClick = {
+                                    if (players.size < 30) {
+                                        val nextNum = players.size + 1
+                                        players = players + Player(
+                                            id = UUID.randomUUID().toString(),
+                                            name = "Player $nextNum",
+                                            role = PlayerRole.ALL_ROUNDER
+                                        )
+                                    }
+                                },
+                                enabled = players.size < 30,
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add player", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(players.size) { index ->
+                            val player = players[index]
+
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${index + 1}.",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            modifier = Modifier.width(24.dp)
+                                        )
+
+                                        PlayerAvatar(
+                                            photoUri = player.photoUri,
+                                            name = player.name,
+                                            size = 36.dp,
+                                            isEditable = true,
+                                            playerId = player.id,
+                                            onPhotoChanged = { path ->
                                                 val updated = players.toMutableList()
-                                                updated[index] = player.copy(role = r)
+                                                updated[index] = player.copy(photoUri = path)
+                                                players = updated
+                                            }
+                                        )
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        OutlinedTextField(
+                                            value = player.name,
+                                            onValueChange = { newName ->
+                                                val updated = players.toMutableList()
+                                                updated[index] = player.copy(name = newName)
                                                 players = updated
                                             },
-                                            label = { Text(r.label, fontSize = 10.sp) },
-                                            modifier = Modifier.height(28.dp)
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f),
+                                            textStyle = MaterialTheme.typography.bodyMedium
                                         )
+
+                                        Spacer(modifier = Modifier.width(4.dp))
+
+                                        // Captain Chip
+                                        FilterChip(
+                                            selected = player.isCaptain,
+                                            onClick = {
+                                                players = players.mapIndexed { i, p ->
+                                                    p.copy(isCaptain = (i == index && !player.isCaptain))
+                                                }
+                                            },
+                                            label = { Text("C", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                                        )
+
+                                        Spacer(modifier = Modifier.width(4.dp))
+
+                                        // Keeper Chip
+                                        FilterChip(
+                                            selected = player.isWicketKeeper,
+                                            onClick = {
+                                                players = players.mapIndexed { i, p ->
+                                                    p.copy(isWicketKeeper = (i == index && !player.isWicketKeeper))
+                                                }
+                                            },
+                                            label = { Text("WK", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(PlayerRole.BATSMAN, PlayerRole.BOWLER, PlayerRole.ALL_ROUNDER, PlayerRole.WICKET_KEEPER).forEach { r ->
+                                            FilterChip(
+                                                selected = player.role == r,
+                                                onClick = {
+                                                    val updated = players.toMutableList()
+                                                    updated[index] = player.copy(role = r)
+                                                    players = updated
+                                                },
+                                                label = { Text(r.label, fontSize = 10.sp) },
+                                                modifier = Modifier.height(28.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1259,76 +1630,48 @@ fun TeamEditorDialog(
                 // Bottom Dialog Actions
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (teamName.isNotBlank() && players.isNotEmpty()) {
-                                onSave(initialTeam.copy(name = teamName.trim(), players = players))
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium)
-                    ) {
-                        Text("Save Team", color = Color.White)
+                    Text(
+                        text = "${players.size} Players in team",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row {
+                        TextButton(onClick = onDismiss) { Text("Cancel") }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (teamName.isNotBlank() && players.isNotEmpty()) {
+                                    onSave(initialTeam.copy(name = teamName.trim(), players = players))
+                                }
+                            },
+                            enabled = teamName.isNotBlank() && players.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium)
+                        ) {
+                            Text("Save Team (${players.size})", color = Color.White)
+                        }
                     }
                 }
             }
         }
     }
 
-    // Modal: Multi-Select from Player Pool into Squad
-    if (showPoolMultiPicker) {
-        PlayerPoolPickerDialog(
-            savedPlayers = savedPlayers,
-            alreadySelectedPlayerNames = players.map { it.name }.toSet(),
-            isMultiSelect = true,
-            onPlayersSelected = { selectedList ->
-                val mutable = players.toMutableList()
-                selectedList.forEach { sel ->
-                    if (!mutable.any { it.name.trim().equals(sel.name.trim(), ignoreCase = true) }) {
-                        val placeholderIdx = mutable.indexOfFirst {
-                            it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null
-                        }
-                        if (placeholderIdx != -1) {
-                            mutable[placeholderIdx] = sel.copy(
-                                id = UUID.randomUUID().toString(),
-                                isCaptain = mutable[placeholderIdx].isCaptain,
-                                isWicketKeeper = mutable[placeholderIdx].isWicketKeeper || sel.isWicketKeeper
-                            )
-                        } else {
-                            mutable.add(sel.copy(id = UUID.randomUUID().toString()))
-                        }
-                    }
+    // Modal: Create a new individual player on the fly and immediately add to squad
+    if (showNewPlayerDialog) {
+        IndividualPlayerEditorDialog(
+            initialPlayer = null,
+            onSave = { newPlayer ->
+                onSaveNewPlayer?.invoke(newPlayer)
+                if (!players.any { it.name.trim().equals(newPlayer.name.trim(), ignoreCase = true) }) {
+                    players = players + newPlayer.copy(id = UUID.randomUUID().toString())
                 }
-                players = mutable
-                showPoolMultiPicker = false
+                showNewPlayerDialog = false
             },
-            onDismiss = { showPoolMultiPicker = false }
-        )
-    }
-
-    // Modal: Single-select from Player Pool to fill or swap a specific slot
-    pickingSlotIndex?.let { slotIndex ->
-        PlayerPoolPickerDialog(
-            savedPlayers = savedPlayers,
-            alreadySelectedPlayerNames = players.map { it.name }.toSet(),
-            isMultiSelect = false,
-            onPlayersSelected = { selectedList ->
-                if (selectedList.isNotEmpty() && slotIndex in players.indices) {
-                    val sel = selectedList.first()
-                    val mutable = players.toMutableList()
-                    mutable[slotIndex] = sel.copy(
-                        id = UUID.randomUUID().toString(),
-                        isCaptain = mutable[slotIndex].isCaptain,
-                        isWicketKeeper = sel.isWicketKeeper || mutable[slotIndex].isWicketKeeper
-                    )
-                    players = mutable
-                }
-                pickingSlotIndex = null
-            },
-            onDismiss = { pickingSlotIndex = null }
+            onDismiss = { showNewPlayerDialog = false }
         )
     }
 }

@@ -1,5 +1,6 @@
 package com.cricket.scoreboard.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.cricket.scoreboard.model.Player
 import com.cricket.scoreboard.model.PlayerRole
 import com.cricket.scoreboard.model.TossChoice
 import com.cricket.scoreboard.ui.components.PlayerAvatar
@@ -45,6 +47,10 @@ fun MatchSetupScreen(
     var selectedTab by remember { mutableStateOf(0) } // 0: Match Info, 1: Team A Squad, 2: Team B Squad
     var showPoolMultiPickerForSquad by remember { mutableStateOf(false) }
     var pickingSlotIndex by remember { mutableStateOf<Int?>(null) }
+    var squadModeTeamA by remember { mutableStateOf(if (savedPlayers.isNotEmpty()) 0 else 1) }
+    var squadModeTeamB by remember { mutableStateOf(if (savedPlayers.isNotEmpty()) 0 else 1) }
+    var squadSearchQuery by remember { mutableStateOf("") }
+    var squadRoleFilter by remember { mutableStateOf<PlayerRole?>(null) }
 
     LazyColumn(
         modifier = Modifier
@@ -868,6 +874,7 @@ fun MatchSetupScreen(
             val isTeamA = selectedTab == 1
             val teamName = if (isTeamA) setup.teamAName else setup.teamBName
             val players = if (isTeamA) setup.teamAPlayers else setup.teamBPlayers
+            val squadMode = if (isTeamA) squadModeTeamA else squadModeTeamB
 
             item {
                 Row(
@@ -883,170 +890,491 @@ fun MatchSetupScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Tap to edit names. Tap (C) for Captain, (WK) for Keeper.",
+                            text = if (squadMode == 0) "1-Tap to add/remove players. Auto-Fill to populate ${setup.playersPerSide} instantly." else "Tap to edit names. Tap (C) for Captain, (WK) for Keeper.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
+
                 Spacer(modifier = Modifier.height(8.dp))
+
+                // Squad Mode Switcher: [⚡ Pick from Pool] vs [✍️ Manual Edit]
+                TabRow(
+                    selectedTabIndex = squadMode,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Tab(
+                        selected = squadMode == 0,
+                        onClick = {
+                            if (isTeamA) squadModeTeamA = 0 else squadModeTeamB = 0
+                        },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(15.dp), tint = PitchGold)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("⚡ Pick from Pool (${players.size}/${setup.playersPerSide})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    )
+                    Tab(
+                        selected = squadMode == 1,
+                        onClick = {
+                            if (isTeamA) squadModeTeamA = 1 else squadModeTeamB = 1
+                        },
+                        text = {
+                            Text("✍️ Manual (${players.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Action Bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    if (squadMode == 0 && savedPlayers.isNotEmpty()) {
+                        Button(
+                            onClick = { viewModel.fillRemainingSetupFromPool(isTeamA) },
+                            colors = ButtonDefaults.buttonColors(containerColor = PitchGold),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                            modifier = Modifier.weight(1.2f).height(36.dp)
+                        ) {
+                            Icon(Icons.Default.FlashOn, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("⚡ Auto-Fill ${setup.playersPerSide}", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.openSavedTeamsDialog(isTeamA) },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        modifier = Modifier.weight(1f).height(36.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Load", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+
                     Button(
                         onClick = { viewModel.openSaveTeamDialog(isTeamA) },
                         colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f).height(38.dp)
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        modifier = Modifier.weight(1f).height(36.dp)
                     ) {
-                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Save Team", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Save", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
-                    OutlinedButton(
-                        onClick = { viewModel.openSavedTeamsDialog(isTeamA) },
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f).height(38.dp)
-                    ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Load Team", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                    if (savedPlayers.isNotEmpty()) {
-                        Button(
-                            onClick = { showPoolMultiPickerForSquad = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = PitchGold),
+
+                    if (players.isNotEmpty()) {
+                        OutlinedButton(
+                            onClick = { viewModel.clearSetupSquad(isTeamA) },
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1.1f).height(38.dp)
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                            modifier = Modifier.weight(0.8f).height(36.dp)
                         ) {
-                            Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color.Black, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("From Pool", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("Clear", fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
 
-                // Quick-Add Horizontal Chips from Pool (1-tap add/fill without typing!)
-                if (savedPlayers.isNotEmpty()) {
+                if (squadMode == 0) {
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Selected Squad Shelf (Horizontal scrollable cards showing who has been picked)
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Selected Squad (${players.size}/${setup.playersPerSide} Players):",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (players.size >= setup.playersPerSide) TurfGreenMedium else MaterialTheme.colorScheme.primary
+                                )
+                                if (players.size >= setup.playersPerSide) {
+                                    Text("✓ Squad Full", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TurfGreenMedium)
+                                }
+                            }
+
+                            if (players.isEmpty()) {
+                                Text(
+                                    text = "No players selected. Tap any player below to add them to $teamName!",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    contentPadding = PaddingValues(vertical = 2.dp)
+                                ) {
+                                    itemsIndexed(players) { index, player ->
+                                        Card(
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                            border = BorderStroke(1.dp, TurfGreenMedium.copy(alpha = 0.5f)),
+                                            modifier = Modifier.width(115.dp)
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(6.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "#${index + 1}",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    IconButton(
+                                                        onClick = {
+                                                            viewModel.removePlayerFromSetup(isTeamA, player.id)
+                                                        },
+                                                        modifier = Modifier.size(18.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(13.dp))
+                                                    }
+                                                }
+
+                                                PlayerAvatar(photoUri = player.photoUri, name = player.name, size = 32.dp)
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = player.name,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = player.role.label,
+                                                    fontSize = 9.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    // Captain Chip
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = if (player.isCaptain) TurfGreenMedium else MaterialTheme.colorScheme.surfaceVariant,
+                                                        modifier = Modifier.clickable {
+                                                            viewModel.setPlayerCaptain(isTeamA, index)
+                                                        }
+                                                    ) {
+                                                        Text(
+                                                            text = "C",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (player.isCaptain) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                    // Keeper Chip
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = if (player.isWicketKeeper) PitchGold else MaterialTheme.colorScheme.surfaceVariant,
+                                                        modifier = Modifier.clickable {
+                                                            viewModel.setPlayerWicketKeeper(isTeamA, index)
+                                                        }
+                                                    ) {
+                                                        Text(
+                                                            text = "WK",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (player.isWicketKeeper) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "⚡ Quick-Add from Pool (Tap to add):",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TurfGreenMedium
+
+                    // Search & Filter for Pool
+                    OutlinedTextField(
+                        value = squadSearchQuery,
+                        onValueChange = { squadSearchQuery = it },
+                        placeholder = { Text("Search pool player by name...", fontSize = 12.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
                     )
+
                     Spacer(modifier = Modifier.height(4.dp))
+
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         contentPadding = PaddingValues(vertical = 2.dp)
                     ) {
-                        items(savedPlayers) { sp ->
-                            val inSquad = players.any { it.name.trim().equals(sp.name.trim(), ignoreCase = true) }
+                        item {
                             FilterChip(
-                                selected = inSquad,
-                                onClick = {
-                                    if (!inSquad) {
-                                        val placeholderIdx = players.indexOfFirst {
-                                            it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null
-                                        }
-                                        if (placeholderIdx != -1) {
-                                            viewModel.replacePlayerInSetup(isTeamA, placeholderIdx, sp)
-                                        } else {
-                                            viewModel.addPlayerToCurrentSetup(isTeamA, sp)
-                                        }
-                                    }
-                                },
-                                leadingIcon = {
-                                    PlayerAvatar(photoUri = sp.photoUri, name = sp.name, size = 18.dp)
-                                },
-                                label = {
-                                    Text(
-                                        if (inSquad) "✓ ${sp.name}" else "+ ${sp.name}",
-                                        fontSize = 11.sp,
-                                        fontWeight = if (inSquad) FontWeight.Normal else FontWeight.Bold
-                                    )
-                                }
+                                selected = squadRoleFilter == null,
+                                onClick = { squadRoleFilter = null },
+                                label = { Text("All (${savedPlayers.size})", fontSize = 11.sp) }
                             )
                         }
-                    }
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-            }
-
-            itemsIndexed(players) { index, player ->
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(1.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "${index + 1}.",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.width(24.dp)
-                        )
-
-                        PlayerAvatar(
-                            photoUri = player.photoUri,
-                            name = player.name,
-                            size = 36.dp,
-                            isEditable = true,
-                            playerId = player.id,
-                            onPhotoChanged = { path ->
-                                viewModel.updatePlayerPhoto(isTeamA, index, path)
-                            }
-                        )
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        OutlinedTextField(
-                            value = player.name,
-                            onValueChange = { viewModel.updatePlayerName(isTeamA, index, it) },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyMedium
-                        )
-
-                        // Pick from pool icon button for this specific slot
-                        if (savedPlayers.isNotEmpty()) {
-                            IconButton(
-                                onClick = { pickingSlotIndex = index },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.PersonSearch,
-                                    contentDescription = "Pick player from pool",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
+                        PlayerRole.values().forEach { role ->
+                            val count = savedPlayers.count { it.role == role }
+                            item {
+                                FilterChip(
+                                    selected = squadRoleFilter == role,
+                                    onClick = { squadRoleFilter = if (squadRoleFilter == role) null else role },
+                                    label = { Text("${role.label} ($count)", fontSize = 11.sp) }
                                 )
                             }
                         }
+                    }
+                }
+            }
 
-                        Spacer(modifier = Modifier.width(4.dp))
+            if (squadMode == 0) {
+                // List of available pool players with 1-tap add/remove
+                val filteredPool = savedPlayers.filter { p ->
+                    (squadSearchQuery.isBlank() || p.name.contains(squadSearchQuery, ignoreCase = true)) &&
+                    (squadRoleFilter == null || p.role == squadRoleFilter)
+                }
 
-                        // Captain button
-                        FilterChip(
-                            selected = player.isCaptain,
-                            onClick = { viewModel.setPlayerCaptain(isTeamA, index) },
-                            label = { Text("C", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
-                        )
+                if (savedPlayers.isEmpty()) {
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Your player pool is currently empty.",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Switch to '✍️ Manual' tab to type player names, or create players in the Teams screen.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                } else if (filteredPool.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No players matching \"$squadSearchQuery\"", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    items(filteredPool, key = { "pool_${it.id}" }) { poolPlayer ->
+                        val inSquad = players.any { it.name.trim().equals(poolPlayer.name.trim(), ignoreCase = true) }
 
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (inSquad)
+                                    TurfGreenMedium.copy(alpha = 0.12f)
+                                else
+                                    MaterialTheme.colorScheme.surface
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (inSquad) TurfGreenMedium else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.togglePlayerInSetup(isTeamA, poolPlayer)
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                PlayerAvatar(photoUri = poolPlayer.photoUri, name = poolPlayer.name, size = 38.dp)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = poolPlayer.name,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
+                                        if (poolPlayer.isCaptain) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("(C)", fontSize = 11.sp, color = TurfGreenMedium, fontWeight = FontWeight.Bold)
+                                        }
+                                        if (poolPlayer.isWicketKeeper) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("(WK)", fontSize = 11.sp, color = PitchGold, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                    Text(
+                                        text = poolPlayer.role.label,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
 
-                        // Wicketkeeper button
-                        FilterChip(
-                            selected = player.isWicketKeeper,
-                            onClick = { viewModel.setPlayerWicketKeeper(isTeamA, index) },
-                            label = { Text("WK", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
-                        )
+                                if (inSquad) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = TurfGreenMedium.copy(alpha = 0.2f)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Icon(Icons.Default.Check, contentDescription = null, tint = TurfGreenMedium, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("In Squad", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TurfGreenMedium)
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                viewModel.togglePlayerInSetup(isTeamA, poolPlayer)
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            viewModel.togglePlayerInSetup(isTeamA, poolPlayer)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(30.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text("Add", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Manual Squad List items
+                itemsIndexed(players) { index, player ->
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(1.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${index + 1}.",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.width(24.dp)
+                            )
+
+                            PlayerAvatar(
+                                photoUri = player.photoUri,
+                                name = player.name,
+                                size = 36.dp,
+                                isEditable = true,
+                                playerId = player.id,
+                                onPhotoChanged = { path ->
+                                    viewModel.updatePlayerPhoto(isTeamA, index, path)
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            OutlinedTextField(
+                                value = player.name,
+                                onValueChange = { viewModel.updatePlayerName(isTeamA, index, it) },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium
+                            )
+
+                            // Pick from pool icon button for this specific slot
+                            if (savedPlayers.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { pickingSlotIndex = index },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.PersonSearch,
+                                        contentDescription = "Pick player from pool",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            // Captain button
+                            FilterChip(
+                                selected = player.isCaptain,
+                                onClick = { viewModel.setPlayerCaptain(isTeamA, index) },
+                                label = { Text("C", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                            )
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            // Wicketkeeper button
+                            FilterChip(
+                                selected = player.isWicketKeeper,
+                                onClick = { viewModel.setPlayerWicketKeeper(isTeamA, index) },
+                                label = { Text("WK", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                            )
+                        }
                     }
                 }
             }
