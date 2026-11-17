@@ -874,7 +874,15 @@ fun MatchSetupScreen(
             val isTeamA = selectedTab == 1
             val teamName = if (isTeamA) setup.teamAName else setup.teamBName
             val players = if (isTeamA) setup.teamAPlayers else setup.teamBPlayers
+            val opposingSquad = if (isTeamA) setup.teamBPlayers else setup.teamAPlayers
+            val opposingTeamName = if (isTeamA) setup.teamBName else setup.teamAName
             val squadMode = if (isTeamA) squadModeTeamA else squadModeTeamB
+
+            // CRITICAL: Filter out any player selected in the opposing team!
+            // If a player is selected in Team 1, don't show that player in Team 2 selection (and vice versa).
+            val availableSavedPlayers = savedPlayers.filterNot { sp ->
+                opposingSquad.any { it.name.trim().equals(sp.name.trim(), ignoreCase = true) }
+            }
 
             item {
                 Row(
@@ -936,7 +944,7 @@ fun MatchSetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (squadMode == 0 && savedPlayers.isNotEmpty()) {
+                    if (squadMode == 0 && availableSavedPlayers.isNotEmpty()) {
                         Button(
                             onClick = { viewModel.fillRemainingSetupFromPool(isTeamA) },
                             colors = ButtonDefaults.buttonColors(containerColor = PitchGold),
@@ -1141,11 +1149,11 @@ fun MatchSetupScreen(
                             FilterChip(
                                 selected = squadRoleFilter == null,
                                 onClick = { squadRoleFilter = null },
-                                label = { Text("All (${savedPlayers.size})", fontSize = 11.sp) }
+                                label = { Text("All (${availableSavedPlayers.size})", fontSize = 11.sp) }
                             )
                         }
                         PlayerRole.values().forEach { role ->
-                            val count = savedPlayers.count { it.role == role }
+                            val count = availableSavedPlayers.count { it.role == role }
                             item {
                                 FilterChip(
                                     selected = squadRoleFilter == role,
@@ -1155,17 +1163,46 @@ fun MatchSetupScreen(
                             }
                         }
                     }
+
+                    // Notice if players from pool are selected in the opposing team and therefore excluded
+                    if (savedPlayers.size > availableSavedPlayers.size) {
+                        val excludedCount = savedPlayers.size - availableSavedPlayers.size
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                tint = PitchGold,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "$excludedCount player(s) selected in $opposingTeamName are hidden",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
 
             if (squadMode == 0) {
-                // List of available pool players with 1-tap add/remove
-                val filteredPool = savedPlayers.filter { p ->
+                // List of available pool players with 1-tap add/remove (excluding players already in opposing team)
+                val filteredPool = availableSavedPlayers.filter { p ->
                     (squadSearchQuery.isBlank() || p.name.contains(squadSearchQuery, ignoreCase = true)) &&
                     (squadRoleFilter == null || p.role == squadRoleFilter)
                 }
 
-                if (savedPlayers.isEmpty()) {
+                if (availableSavedPlayers.isEmpty()) {
                     item {
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -1178,12 +1215,15 @@ fun MatchSetupScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    text = "Your player pool is currently empty.",
+                                    text = if (savedPlayers.isNotEmpty())
+                                        "All players in your pool are currently selected in $opposingTeamName."
+                                    else
+                                        "Your player pool is currently empty.",
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "Switch to '✍️ Manual' tab to type player names, or create players in the Teams screen.",
+                                    text = "Switch to '✍️ Manual' tab to type custom player names, or add more players in the Teams screen.",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center
@@ -1404,12 +1444,16 @@ fun MatchSetupScreen(
         }
     }
 
-    // Modal: Multi-Select Pool Picker Dialog for Squad
+    // Modal: Multi-Select Pool Picker Dialog for Squad (excluding opposing team's players)
     if (showPoolMultiPickerForSquad) {
         val isTeamA = selectedTab == 1
         val currentSquad = if (isTeamA) setup.teamAPlayers else setup.teamBPlayers
+        val opposingSquad = if (isTeamA) setup.teamBPlayers else setup.teamAPlayers
+        val availablePool = savedPlayers.filterNot { sp ->
+            opposingSquad.any { it.name.trim().equals(sp.name.trim(), ignoreCase = true) }
+        }
         PlayerPoolPickerDialog(
-            savedPlayers = savedPlayers,
+            savedPlayers = availablePool,
             alreadySelectedPlayerNames = currentSquad.map { it.name }.toSet(),
             isMultiSelect = true,
             onPlayersSelected = { selectedList ->
@@ -1432,12 +1476,16 @@ fun MatchSetupScreen(
         )
     }
 
-    // Modal: Single-select Pool Picker Dialog to swap or fill a specific slot
+    // Modal: Single-select Pool Picker Dialog to swap or fill a specific slot (excluding opposing team's players)
     pickingSlotIndex?.let { slotIndex ->
         val isTeamA = selectedTab == 1
         val currentSquad = if (isTeamA) setup.teamAPlayers else setup.teamBPlayers
+        val opposingSquad = if (isTeamA) setup.teamBPlayers else setup.teamAPlayers
+        val availablePool = savedPlayers.filterNot { sp ->
+            opposingSquad.any { it.name.trim().equals(sp.name.trim(), ignoreCase = true) }
+        }
         PlayerPoolPickerDialog(
-            savedPlayers = savedPlayers,
+            savedPlayers = availablePool,
             alreadySelectedPlayerNames = currentSquad.map { it.name }.toSet(),
             isMultiSelect = false,
             onPlayersSelected = { selectedList ->

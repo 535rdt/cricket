@@ -1389,8 +1389,14 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { state ->
             val curSetup = state.setup
             val currentList = if (isTeamA) curSetup.teamAPlayers else curSetup.teamBPlayers
-            if (currentList.any { it.name.trim().equals(player.name.trim(), ignoreCase = true) }) {
-                state.copy(statusMessage = "${player.name} is already in this team!")
+            val opposingList = if (isTeamA) curSetup.teamBPlayers else curSetup.teamAPlayers
+            val opposingTeamName = if (isTeamA) curSetup.teamBName else curSetup.teamAName
+            val targetTeamName = if (isTeamA) curSetup.teamAName else curSetup.teamBName
+
+            if (opposingList.any { it.name.trim().equals(player.name.trim(), ignoreCase = true) }) {
+                state.copy(statusMessage = "${player.name} is already selected in $opposingTeamName!")
+            } else if (currentList.any { it.name.trim().equals(player.name.trim(), ignoreCase = true) }) {
+                state.copy(statusMessage = "${player.name} is already in $targetTeamName!")
             } else {
                 val cloned = player.copy(id = UUID.randomUUID().toString())
                 val updated = currentList + cloned
@@ -1398,12 +1404,12 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 if (isTeamA) {
                     state.copy(
                         setup = curSetup.copy(teamAPlayers = updated, playersPerSide = newCount),
-                        statusMessage = "Added ${player.name} to Team 1"
+                        statusMessage = "Added ${player.name} to $targetTeamName"
                     )
                 } else {
                     state.copy(
                         setup = curSetup.copy(teamBPlayers = updated, playersPerSide = newCount),
-                        statusMessage = "Added ${player.name} to Team 2"
+                        statusMessage = "Added ${player.name} to $targetTeamName"
                     )
                 }
             }
@@ -1414,7 +1420,12 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { state ->
             val curSetup = state.setup
             val currentList = (if (isTeamA) curSetup.teamAPlayers else curSetup.teamBPlayers).toMutableList()
-            if (index in currentList.indices) {
+            val opposingList = if (isTeamA) curSetup.teamBPlayers else curSetup.teamAPlayers
+            val opposingTeamName = if (isTeamA) curSetup.teamBName else curSetup.teamAName
+
+            if (opposingList.any { it.name.trim().equals(player.name.trim(), ignoreCase = true) }) {
+                state.copy(statusMessage = "${player.name} is already selected in $opposingTeamName!")
+            } else if (index in currentList.indices) {
                 currentList[index] = player.copy(
                     id = currentList[index].id,
                     isCaptain = currentList[index].isCaptain,
@@ -1451,6 +1462,10 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
     fun togglePlayerInSetup(isTeamA: Boolean, player: Player) {
         _uiState.update { state ->
             val curSetup = state.setup
+            val opposingList = if (isTeamA) curSetup.teamBPlayers else curSetup.teamAPlayers
+            val opposingTeamName = if (isTeamA) curSetup.teamBName else curSetup.teamAName
+            val targetTeamName = if (isTeamA) curSetup.teamAName else curSetup.teamBName
+
             val currentList = (if (isTeamA) curSetup.teamAPlayers else curSetup.teamBPlayers).toMutableList()
             val existingIndex = currentList.indexOfFirst { it.name.trim().equals(player.name.trim(), ignoreCase = true) }
             if (existingIndex >= 0) {
@@ -1458,6 +1473,9 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 if (isTeamA) state.copy(setup = curSetup.copy(teamAPlayers = currentList), statusMessage = "Removed ${player.name}")
                 else state.copy(setup = curSetup.copy(teamBPlayers = currentList), statusMessage = "Removed ${player.name}")
             } else {
+                if (opposingList.any { it.name.trim().equals(player.name.trim(), ignoreCase = true) }) {
+                    return@update state.copy(statusMessage = "${player.name} is already selected in $opposingTeamName!")
+                }
                 val placeholderIdx = currentList.indexOfFirst {
                     it.name.matches(Regex("Player\\s+\\d+", RegexOption.IGNORE_CASE)) && it.photoUri == null
                 }
@@ -1471,8 +1489,8 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                     currentList.add(cloned)
                 }
                 val newCount = maxOf(curSetup.playersPerSide, currentList.size)
-                if (isTeamA) state.copy(setup = curSetup.copy(teamAPlayers = currentList, playersPerSide = newCount), statusMessage = "Added ${player.name} to Team 1")
-                else state.copy(setup = curSetup.copy(teamBPlayers = currentList, playersPerSide = newCount), statusMessage = "Added ${player.name} to Team 2")
+                if (isTeamA) state.copy(setup = curSetup.copy(teamAPlayers = currentList, playersPerSide = newCount), statusMessage = "Added ${player.name} to $targetTeamName")
+                else state.copy(setup = curSetup.copy(teamBPlayers = currentList, playersPerSide = newCount), statusMessage = "Added ${player.name} to $targetTeamName")
             }
         }
     }
@@ -1481,6 +1499,8 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { state ->
             val curSetup = state.setup
             val currentList = (if (isTeamA) curSetup.teamAPlayers else curSetup.teamBPlayers).toMutableList()
+            val opposingList = if (isTeamA) curSetup.teamBPlayers else curSetup.teamAPlayers
+            val targetTeamName = if (isTeamA) curSetup.teamAName else curSetup.teamBName
             val pool = state.savedPlayers
             val target = curSetup.playersPerSide
 
@@ -1490,7 +1510,9 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
 
             for (p in pool) {
                 if (cleanList.size >= target) break
-                if (!cleanList.any { it.name.trim().equals(p.name.trim(), ignoreCase = true) }) {
+                val alreadyInCurrent = cleanList.any { it.name.trim().equals(p.name.trim(), ignoreCase = true) }
+                val alreadyInOpposing = opposingList.any { it.name.trim().equals(p.name.trim(), ignoreCase = true) }
+                if (!alreadyInCurrent && !alreadyInOpposing) {
                     cleanList.add(p.copy(id = UUID.randomUUID().toString()))
                 }
             }
@@ -1500,8 +1522,8 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 cleanList.add(Player(id = UUID.randomUUID().toString(), name = "Player $nextNum", role = PlayerRole.ALL_ROUNDER))
             }
 
-            if (isTeamA) state.copy(setup = curSetup.copy(teamAPlayers = cleanList), statusMessage = "Filled Team 1 squad from pool!")
-            else state.copy(setup = curSetup.copy(teamBPlayers = cleanList), statusMessage = "Filled Team 2 squad from pool!")
+            if (isTeamA) state.copy(setup = curSetup.copy(teamAPlayers = cleanList), statusMessage = "Filled $targetTeamName squad from pool!")
+            else state.copy(setup = curSetup.copy(teamBPlayers = cleanList), statusMessage = "Filled $targetTeamName squad from pool!")
         }
     }
 
