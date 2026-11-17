@@ -244,7 +244,8 @@ class MainActivity : ComponentActivity() {
                                 innings = match.currentInnings,
                                 maxOversPerBowler = match.maxOversPerBowler,
                                 onDismiss = { viewModel.dismissNextBowlerDialog() },
-                                onConfirm = { newBowlerId -> viewModel.selectNextBowler(newBowlerId) }
+                                onConfirm = { newBowlerId -> viewModel.selectNextBowler(newBowlerId) },
+                                onAddNewPlayer = { viewModel.openAddMidMatchPlayerDialog(preselectedTeamId = match.bowlingTeam.id) }
                             )
                         }
 
@@ -252,7 +253,8 @@ class MainActivity : ComponentActivity() {
                             NewBatsmanDialog(
                                 battingTeam = match.battingTeam,
                                 currentInnings = match.currentInnings,
-                                onConfirm = { newBatsmanId -> viewModel.selectIncomingBatsman(newBatsmanId) }
+                                onConfirm = { newBatsmanId -> viewModel.selectIncomingBatsman(newBatsmanId) },
+                                onAddNewPlayer = { viewModel.openAddMidMatchPlayerDialog(preselectedTeamId = match.battingTeam.id) }
                             )
                         }
 
@@ -267,7 +269,20 @@ class MainActivity : ComponentActivity() {
                                 onConfirm = { isStriker, newPlayerId, reason ->
                                     viewModel.changeBatsman(isStriker, newPlayerId, reason)
                                 },
-                                onDismiss = { viewModel.dismissChangeBatsmanDialog() }
+                                onDismiss = { viewModel.dismissChangeBatsmanDialog() },
+                                onAddNewPlayer = { viewModel.openAddMidMatchPlayerDialog(preselectedTeamId = match.battingTeam.id) }
+                            )
+                        }
+
+                        if (uiState.showAddMidMatchPlayerDialog && match != null) {
+                            AddMidMatchPlayerDialog(
+                                match = match,
+                                savedPlayers = uiState.savedPlayers,
+                                initialTeamId = uiState.addMidMatchPlayerPreselectedTeamId,
+                                onConfirm = { teamId, player, expandCapacity, saveToPool ->
+                                    viewModel.addPlayerToLiveMatch(teamId, player, expandCapacity, saveToPool)
+                                },
+                                onDismiss = { viewModel.dismissAddMidMatchPlayerDialog() }
                             )
                         }
 

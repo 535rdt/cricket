@@ -79,6 +79,8 @@ data class ScoreboardUiState(
     val showLiveSharingDialog: Boolean = false,
     val showWatchLiveDialog: Boolean = false,
     val showShareReportDialog: Boolean = false,
+    val showAddMidMatchPlayerDialog: Boolean = false,
+    val addMidMatchPlayerPreselectedTeamId: String? = null,
     val liveViewerLoading: Boolean = false,
     val liveViewerError: String? = null,
     val isSpectatorReconnecting: Boolean = false,
@@ -981,11 +983,25 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
 
         // Find which batting spot is vacant (either current striker or non striker was out)
         val strikerIsOut = inn.batsmen.find { it.playerId == currentMatch.currentStrikerId }?.isOut == true
+        val incomingPlayer = currentMatch.battingTeam.players.find { it.id == newBatsmanId }
 
+        var foundInBatsmen = false
         val updatedBatsmen = inn.batsmen.map { b ->
             if (b.playerId == newBatsmanId) {
+                foundInBatsmen = true
                 b.copy(isBatting = true)
             } else b
+        }.toMutableList()
+
+        if (!foundInBatsmen && incomingPlayer != null) {
+            updatedBatsmen.add(
+                BatsmanScore(
+                    playerId = newBatsmanId,
+                    name = incomingPlayer.name,
+                    photoUri = incomingPlayer.photoUri,
+                    isBatting = true
+                )
+            )
         }
 
         val updatedInn = inn.copy(batsmen = updatedBatsmen)
@@ -1031,6 +1047,96 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
 
     fun dismissNextBowlerDialog() {
         _uiState.update { it.copy(showNextBowlerDialog = false) }
+    }
+
+    fun openAddMidMatchPlayerDialog(preselectedTeamId: String? = null) {
+        _uiState.update {
+            it.copy(
+                showAddMidMatchPlayerDialog = true,
+                addMidMatchPlayerPreselectedTeamId = preselectedTeamId
+            )
+        }
+    }
+
+    fun dismissAddMidMatchPlayerDialog() {
+        _uiState.update {
+            it.copy(
+                showAddMidMatchPlayerDialog = false,
+                addMidMatchPlayerPreselectedTeamId = null
+            )
+        }
+    }
+
+    fun addPlayerToLiveMatch(
+        teamId: String,
+        player: Player,
+        expandCapacity: Boolean,
+        saveToPool: Boolean = false
+    ) {
+        val currentMatch = _uiState.value.match ?: return
+        val isTeamA = (teamId == currentMatch.teamA.id)
+        val targetTeam = if (isTeamA) currentMatch.teamA else currentMatch.teamB
+        val opposingTeam = if (isTeamA) currentMatch.teamB else currentMatch.teamA
+
+        if (targetTeam.players.any { it.name.trim().equals(player.name.trim(), ignoreCase = true) }) {
+            _uiState.update { it.copy(statusMessage = "${player.name} is already in ${targetTeam.name}!") }
+            return
+        }
+        if (opposingTeam.players.any { it.name.trim().equals(player.name.trim(), ignoreCase = true) }) {
+            _uiState.update { it.copy(statusMessage = "${player.name} is already playing for ${opposingTeam.name}!") }
+            return
+        }
+
+        // Snapshot current match state for undo support
+        val newUndoStack = _uiState.value.undoStack + currentMatch
+
+        val finalizedPlayer = if (player.id.isBlank()) player.copy(id = UUID.randomUUID().toString()) else player
+        val updatedSquad = targetTeam.players + finalizedPlayer
+        val updatedTargetTeam = targetTeam.copy(players = updatedSquad)
+
+        val newPlayersPerSide = if (expandCapacity) currentMatch.playersPerSide + 1 else currentMatch.playersPerSide
+
+        // If the added player is joining the team that is currently batting, add them to currentInnings.batsmen
+        val currentInn = currentMatch.currentInnings
+        val isCurrentBattingTeam = (teamId == currentInn.battingTeamId)
+        val updatedInnBatsmen = if (isCurrentBattingTeam && currentInn.batsmen.none { it.playerId == finalizedPlayer.id }) {
+            currentInn.batsmen + BatsmanScore(
+                playerId = finalizedPlayer.id,
+                name = finalizedPlayer.name,
+                photoUri = finalizedPlayer.photoUri,
+                isBatting = false,
+                isOut = false
+            )
+        } else {
+            currentInn.batsmen
+        }
+        val updatedInn = currentInn.copy(batsmen = updatedInnBatsmen)
+
+        val updatedMatch = currentMatch.copy(
+            teamA = if (isTeamA) updatedTargetTeam else currentMatch.teamA,
+            teamB = if (!isTeamA) updatedTargetTeam else currentMatch.teamB,
+            playersPerSide = newPlayersPerSide,
+            innings1 = if (currentMatch.currentInningsIndex == 1) updatedInn else currentMatch.innings1,
+            innings2 = if (currentMatch.currentInningsIndex == 2) updatedInn else currentMatch.innings2
+        )
+
+        if (saveToPool && !_uiState.value.savedPlayers.any { it.name.trim().equals(finalizedPlayer.name.trim(), ignoreCase = true) }) {
+            storage.savePlayer(finalizedPlayer)
+        }
+        val updatedPool = storage.getSavedPlayers()
+
+        _uiState.update {
+            it.copy(
+                match = updatedMatch,
+                undoStack = newUndoStack,
+                savedPlayers = updatedPool,
+                showAddMidMatchPlayerDialog = false,
+                addMidMatchPlayerPreselectedTeamId = null,
+                statusMessage = "Added ${finalizedPlayer.name} to ${updatedTargetTeam.name}${if (expandCapacity) " (Cap: $newPlayersPerSide)" else ""}"
+            )
+        }
+
+        saveAndBroadcastMatch(updatedMatch)
     }
 
     fun changeBatsman(isStriker: Boolean, newPlayerId: String, reason: ChangeBatsmanReason) {
@@ -1223,6 +1329,7 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 showNextBowlerDialog = false,
                 showNewBatsmanDialog = false,
                 showChangeBatsmanDialog = false,
+                showAddMidMatchPlayerDialog = false,
                 showInningsBreakDialog = false,
                 showMatchEndDialog = false
             )
@@ -1240,7 +1347,8 @@ class CricketViewModel(application: Application) : AndroidViewModel(application)
                 showMatchEndDialog = false,
                 showInningsBreakDialog = false,
                 showNewGameDialog = false,
-                showChangeBatsmanDialog = false
+                showChangeBatsmanDialog = false,
+                showAddMidMatchPlayerDialog = false
             )
         }
     }

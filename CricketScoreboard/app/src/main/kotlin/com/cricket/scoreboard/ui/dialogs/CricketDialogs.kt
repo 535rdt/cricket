@@ -197,7 +197,8 @@ fun NextBowlerDialog(
     innings: Innings? = null,
     maxOversPerBowler: Int = 0,
     onDismiss: (() -> Unit)? = null,
-    onConfirm: (newBowlerId: String) -> Unit
+    onConfirm: (newBowlerId: String) -> Unit,
+    onAddNewPlayer: (() -> Unit)? = null
 ) {
     var selectedBowlerId by remember {
         val eligible = bowlingTeam.players.firstOrNull { player ->
@@ -207,6 +208,12 @@ fun NextBowlerDialog(
             player.id != lastBowlerId && player.id != currentBowlerId && !quotaDone
         }
         mutableStateOf(eligible?.id ?: bowlingTeam.players.firstOrNull()?.id ?: "")
+    }
+
+    LaunchedEffect(bowlingTeam.players) {
+        if (selectedBowlerId.isEmpty() || bowlingTeam.players.none { it.id == selectedBowlerId }) {
+            selectedBowlerId = bowlingTeam.players.lastOrNull()?.id ?: ""
+        }
     }
 
     Dialog(onDismissRequest = { onDismiss?.invoke() }) {
@@ -237,6 +244,19 @@ fun NextBowlerDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
+                if (onAddNewPlayer != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onAddNewPlayer,
+                        modifier = Modifier.fillMaxWidth().height(36.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("➕ Add New Bowler to ${bowlingTeam.name}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -334,7 +354,8 @@ fun NextBowlerDialog(
 fun NewBatsmanDialog(
     battingTeam: Team,
     currentInnings: Innings,
-    onConfirm: (newBatsmanId: String) -> Unit
+    onConfirm: (newBatsmanId: String) -> Unit,
+    onAddNewPlayer: (() -> Unit)? = null
 ) {
     val availablePlayers = battingTeam.players.filter { player ->
         val score = currentInnings.batsmen.find { it.playerId == player.id }
@@ -343,6 +364,12 @@ fun NewBatsmanDialog(
 
     var selectedBatsmanId by remember {
         mutableStateOf(availablePlayers.firstOrNull()?.id ?: "")
+    }
+
+    LaunchedEffect(availablePlayers) {
+        if (selectedBatsmanId.isEmpty() || availablePlayers.none { it.id == selectedBatsmanId }) {
+            selectedBatsmanId = availablePlayers.lastOrNull()?.id ?: ""
+        }
     }
 
     Dialog(onDismissRequest = { /* Must select incoming batsman */ }) {
@@ -370,6 +397,19 @@ fun NewBatsmanDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
+                if (onAddNewPlayer != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onAddNewPlayer,
+                        modifier = Modifier.fillMaxWidth().height(36.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("➕ Add Late Arriving Player to ${battingTeam.name}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -431,7 +471,8 @@ fun ChangeBatsmanDialog(
     initialIsStriker: Boolean = true,
     savedPlayers: List<Player> = emptyList(),
     onConfirm: (isStriker: Boolean, newPlayerId: String, reason: ChangeBatsmanReason) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddNewPlayer: (() -> Unit)? = null
 ) {
     var isStriker by remember { mutableStateOf(initialIsStriker) }
     var selectedReason by remember { mutableStateOf(ChangeBatsmanReason.TACTICAL_SUBSTITUTION) }
@@ -457,6 +498,12 @@ fun ChangeBatsmanDialog(
 
     var selectedPlayerId by remember {
         mutableStateOf(availableTeamPlayers.firstOrNull()?.id ?: availablePoolPlayers.firstOrNull()?.id ?: "")
+    }
+
+    LaunchedEffect(availableTeamPlayers) {
+        if (selectedPlayerId.isEmpty() || (availableTeamPlayers.none { it.id == selectedPlayerId } && availablePoolPlayers.none { it.id == selectedPlayerId })) {
+            selectedPlayerId = availableTeamPlayers.lastOrNull()?.id ?: availablePoolPlayers.firstOrNull()?.id ?: ""
+        }
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -605,6 +652,19 @@ fun ChangeBatsmanDialog(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(6.dp))
+
+                if (onAddNewPlayer != null) {
+                    OutlinedButton(
+                        onClick = onAddNewPlayer,
+                        modifier = Modifier.fillMaxWidth().height(36.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("➕ Add Late Arriving Player to ${battingTeam.name}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
                 if (availableTeamPlayers.isEmpty() && availablePoolPlayers.isEmpty()) {
                     Text(

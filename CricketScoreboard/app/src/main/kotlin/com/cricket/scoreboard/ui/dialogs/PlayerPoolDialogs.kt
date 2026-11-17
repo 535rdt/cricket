@@ -6,8 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -17,9 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.cricket.scoreboard.model.Match
 import com.cricket.scoreboard.model.Player
 import com.cricket.scoreboard.model.PlayerRole
 import com.cricket.scoreboard.model.Team
@@ -606,6 +611,450 @@ fun AddPlayerToTeamDialog(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Dialog to add a player in the middle of a live match.
+ * Supports choosing from the saved Player Pool or entering a new player on the fly,
+ * selecting the destination team (Team A or Team B), and optionally expanding
+ * the players-per-side / max-wickets limit.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AddMidMatchPlayerDialog(
+    match: Match,
+    savedPlayers: List<Player>,
+    initialTeamId: String? = null,
+    onConfirm: (teamId: String, player: Player, expandCapacity: Boolean, saveToPool: Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedTeamId by remember {
+        mutableStateOf(initialTeamId ?: match.battingTeam.id)
+    }
+
+    val teamA = match.teamA
+    val teamB = match.teamB
+    val isTeamASelected = (selectedTeamId == teamA.id)
+    val selectedTeam = if (isTeamASelected) teamA else teamB
+    val opposingTeam = if (isTeamASelected) teamB else teamA
+
+    var playerSourceTab by remember { mutableStateOf(if (savedPlayers.isNotEmpty()) 0 else 1) } // 0: From Pool, 1: Create New
+    var poolSearchQuery by remember { mutableStateOf("") }
+    var selectedRoleFilter by remember { mutableStateOf<PlayerRole?>(null) }
+    var chosenPoolPlayer by remember { mutableStateOf<Player?>(null) }
+
+    var newPlayerName by remember { mutableStateOf("") }
+    var newPlayerRole by remember { mutableStateOf(PlayerRole.ALL_ROUNDER) }
+    var saveToPool by remember { mutableStateOf(true) }
+
+    var expandCapacity by remember {
+        mutableStateOf(selectedTeam.players.size >= match.playersPerSide)
+    }
+
+    // Filter available saved players (exclude players already in Team A or Team B)
+    val availablePool = remember(savedPlayers, selectedTeam, opposingTeam, poolSearchQuery, selectedRoleFilter) {
+        savedPlayers.filterNot { sp ->
+            selectedTeam.players.any { it.name.trim().equals(sp.name.trim(), ignoreCase = true) } ||
+            opposingTeam.players.any { it.name.trim().equals(sp.name.trim(), ignoreCase = true) }
+        }.filter { sp ->
+            val matchesSearch = poolSearchQuery.isBlank() || sp.name.contains(poolSearchQuery, ignoreCase = true)
+            val matchesRole = selectedRoleFilter == null || sp.role == selectedRoleFilter
+            matchesSearch && matchesRole
+        }
+    }
+
+    val isNewNameDuplicate = remember(newPlayerName, selectedTeam, opposingTeam) {
+        val trimmed = newPlayerName.trim()
+        if (trimmed.isBlank()) false
+        else selectedTeam.players.any { it.name.trim().equals(trimmed, ignoreCase = true) } ||
+             opposingTeam.players.any { it.name.trim().equals(trimmed, ignoreCase = true) }
+    }
+
+    val canConfirm = if (playerSourceTab == 0) {
+        chosenPoolPlayer != null
+    } else {
+        newPlayerName.isNotBlank() && !isNewNameDuplicate
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.88f)
+                .padding(6.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.PersonAdd,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Add Mid-Match Player",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Text(
+                            text = "Add late arrival, substitute, or new player to this match",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Section 1: Choose Destination Team
+                Text(
+                    text = "1. Which team is this player joining?",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val isABatting = (match.battingTeam.id == teamA.id)
+                    FilterChip(
+                        selected = isTeamASelected,
+                        onClick = {
+                            selectedTeamId = teamA.id
+                            chosenPoolPlayer = null
+                            expandCapacity = teamA.players.size >= match.playersPerSide
+                        },
+                        label = {
+                            Text(
+                                text = "${teamA.name} (${teamA.players.size}p) ${if (isABatting) "🏏" else "⚾"}",
+                                fontSize = 11.sp,
+                                fontWeight = if (isTeamASelected) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    val isBBatting = (match.battingTeam.id == teamB.id)
+                    FilterChip(
+                        selected = !isTeamASelected,
+                        onClick = {
+                            selectedTeamId = teamB.id
+                            chosenPoolPlayer = null
+                            expandCapacity = teamB.players.size >= match.playersPerSide
+                        },
+                        label = {
+                            Text(
+                                text = "${teamB.name} (${teamB.players.size}p) ${if (isBBatting) "🏏" else "⚾"}",
+                                fontSize = 11.sp,
+                                fontWeight = if (!isTeamASelected) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Section 2: Player Source (From Pool vs Create New)
+                PrimaryTabRow(
+                    selectedTabIndex = playerSourceTab,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Tab(
+                        selected = playerSourceTab == 0,
+                        onClick = { playerSourceTab = 0 },
+                        text = {
+                            Text(
+                                text = "⚡ Saved Pool (${availablePool.size})",
+                                fontSize = 11.sp,
+                                fontWeight = if (playerSourceTab == 0) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
+                    Tab(
+                        selected = playerSourceTab == 1,
+                        onClick = { playerSourceTab = 1 },
+                        text = {
+                            Text(
+                                text = "✍️ New Player",
+                                fontSize = 11.sp,
+                                fontWeight = if (playerSourceTab == 1) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Body content based on tab
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (playerSourceTab == 0) {
+                        // TAB 0: Saved Pool
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Search & Filter
+                            OutlinedTextField(
+                                value = poolSearchQuery,
+                                onValueChange = { poolSearchQuery = it },
+                                placeholder = { Text("Search player name...", fontSize = 12.sp) },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                trailingIcon = {
+                                    if (poolSearchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { poolSearchQuery = "" }) {
+                                            Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth().height(46.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Role Filter
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                FilterChip(
+                                    selected = selectedRoleFilter == null,
+                                    onClick = { selectedRoleFilter = null },
+                                    label = { Text("All", fontSize = 10.sp) }
+                                )
+                                listOf(
+                                    PlayerRole.BATSMAN,
+                                    PlayerRole.BOWLER,
+                                    PlayerRole.ALL_ROUNDER,
+                                    PlayerRole.WICKET_KEEPER
+                                ).forEach { r ->
+                                    FilterChip(
+                                        selected = selectedRoleFilter == r,
+                                        onClick = { selectedRoleFilter = if (selectedRoleFilter == r) null else r },
+                                        label = { Text(r.label, fontSize = 10.sp) }
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            if (availablePool.isEmpty()) {
+                                Box(
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(Icons.Default.PersonOff, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(32.dp))
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = if (savedPlayers.isEmpty()) "No saved players in pool.\nUse 'New Player' tab to enter name!" else "No unassigned players match.",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    items(availablePool, key = { it.id }) { player ->
+                                        val isChosen = (chosenPoolPlayer?.id == player.id)
+                                        Card(
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (isChosen) TurfGreenMedium.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                            ),
+                                            border = if (isChosen) BorderStroke(1.5.dp, TurfGreenMedium) else null,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { chosenPoolPlayer = player }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                PlayerAvatar(photoUri = player.photoUri, name = player.name, size = 32.dp)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(text = player.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text(text = player.role.label, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                                }
+                                                if (isChosen) {
+                                                    Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = TurfGreenMedium, modifier = Modifier.size(20.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // TAB 1: Create New Player
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = newPlayerName,
+                                onValueChange = { newPlayerName = it },
+                                label = { Text("Player Full Name") },
+                                placeholder = { Text("e.g. John Smith") },
+                                singleLine = true,
+                                isError = isNewNameDuplicate,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            if (isNewNameDuplicate) {
+                                Text(
+                                    text = "A player with this name is already participating in this match!",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+
+                            Text(text = "Player Role:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf(
+                                    PlayerRole.ALL_ROUNDER,
+                                    PlayerRole.BATSMAN,
+                                    PlayerRole.BOWLER,
+                                    PlayerRole.WICKET_KEEPER
+                                ).forEach { r ->
+                                    FilterChip(
+                                        selected = newPlayerRole == r,
+                                        onClick = { newPlayerRole = r },
+                                        label = { Text(r.label, fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable { saveToPool = !saveToPool }
+                            ) {
+                                Checkbox(
+                                    checked = saveToPool,
+                                    onCheckedChange = { saveToPool = it }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Save to Player Pool for future matches",
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Section 3: Expand Capacity / Players Per Side Checkbox
+                Card(
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { expandCapacity = !expandCapacity }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = expandCapacity,
+                            onCheckedChange = { expandCapacity = it }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Expand Capacity (${match.playersPerSide} ➔ ${match.playersPerSide + 1} players)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TurfGreenMedium
+                            )
+                            Text(
+                                text = "Gives an additional wicket before all-out so this team isn't penalized",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Footer Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val playerToAdd = if (playerSourceTab == 0) {
+                                chosenPoolPlayer ?: return@Button
+                            } else {
+                                Player(
+                                    id = UUID.randomUUID().toString(),
+                                    name = newPlayerName.trim(),
+                                    role = newPlayerRole
+                                )
+                            }
+                            onConfirm(selectedTeam.id, playerToAdd, expandCapacity, saveToPool && playerSourceTab == 1)
+                        },
+                        enabled = canConfirm,
+                        colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = "Add to ${selectedTeam.name} 🏏",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }

@@ -355,7 +355,17 @@ fun LiveScoreboardScreen(
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
                                 Spacer(modifier = Modifier.width(3.dp))
-                                Text("Swap Strike", fontSize = 11.sp)
+                                Text("Swap", fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.openAddMidMatchPlayerDialog(preselectedTeamId = match.battingTeam.id) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Add", fontSize = 11.sp)
                             }
                         }
                     }
@@ -475,12 +485,24 @@ fun LiveScoreboardScreen(
                     )
 
                     if (!uiState.isSpectatorMode) {
-                        OutlinedButton(
-                            onClick = { viewModel.openChangeBowlerDialog() },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(30.dp)
-                        ) {
-                            Text("Change", fontSize = 11.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(
+                                onClick = { viewModel.openChangeBowlerDialog() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text("Change", fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.openAddMidMatchPlayerDialog(preselectedTeamId = match.bowlingTeam.id) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Add", fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -705,6 +727,22 @@ fun LiveScoreboardScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // Mid-Match Add Player Button
+        if (!uiState.isSpectatorMode) {
+            Button(
+                onClick = { viewModel.openAddMidMatchPlayerDialog() },
+                colors = ButtonDefaults.buttonColors(containerColor = TurfGreenMedium),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+            ) {
+                Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("➕ Add Player Mid-Match (Late Arrival / Sub)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
 
